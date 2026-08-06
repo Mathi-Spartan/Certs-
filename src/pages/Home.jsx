@@ -7,42 +7,46 @@ export default function Home() {
   return (
     <>
       <PubNav />
+
+      {/* Hero — SSLVault gradient style */}
       <div className="hero">
         <div className="container">
           <div className="hero-tag">Certified PKI Specialist · Authorised Reseller</div>
           <h1>Enterprise SSL certificates,<br />matched to your infrastructure.</h1>
           <p>DigiCert · Thawte · RapidSSL · GeoTrust · Sectigo<br />VMC / CMC · Automation products</p>
           <div className="hero-btns">
-            <Link to="/products/digicert" className="btn btn-primary">Browse certificates</Link>
-            <a href="mailto:mathivanan@gogetssl.com" className="btn btn-ghost">Talk to a specialist</a>
+            <Link to="/products/digicert" className="btn btn-ghost">Browse certificates →</Link>
+            <a href="mailto:mathivanan@gogetssl.com" className="btn btn-ghost-outline">Talk to a specialist</a>
           </div>
         </div>
-      </div>
-      <div className="trust-bar">
-        <div className="trust-bar-inner">
-          {['Authorised DigiCert Partner', 'Sectigo Reseller', 'GeoTrust & RapidSSL', 'VMC Verified', '24h issuance', 'GoGetSSL API Partner'].map(t => (
-            <div key={t} className="trust-item">{t}</div>
-          ))}
+        {/* Trust bar inside hero */}
+        <div className="trust-bar" style={{marginTop:48}}>
+          <div className="trust-bar-inner">
+            {['Authorised DigiCert Partner','Sectigo Reseller','GeoTrust & RapidSSL','VMC Verified','24h issuance','GoGetSSL API Partner'].map(t=>(
+              <div key={t} className="trust-item">{t}</div>
+            ))}
+          </div>
         </div>
       </div>
 
+      {/* Featured certs */}
       <div className="section" style={{background:'var(--white)'}}>
         <div className="container">
-          <div style={{textAlign:'center', marginBottom:48}}>
+          <div style={{textAlign:'center',marginBottom:48}}>
             <h2>Featured certificates</h2>
-            <p style={{color:'var(--ink-muted)', marginTop:8}}>Trusted by enterprises worldwide. Contact us for pricing tailored to your volume.</p>
+            <p style={{color:'var(--ink-muted)',marginTop:8}}>Contact us for pricing tailored to your volume.</p>
           </div>
           <div className="prod-grid">
-            {featured.map(p => (
-              <div key={p.id} className={`prod-card ${p.featured ? 'featured' : ''}`}>
-                {p.badge && <div className="prod-badge">{p.badge}</div>}
+            {featured.map(p=>(
+              <div key={p.id} className={`prod-card ${p.featured?'featured':''}`}>
+                {p.badge&&<div className="prod-badge">{p.badge}</div>}
                 <div className="prod-ca">{p.ca}</div>
                 <div className="prod-name">{p.name}</div>
                 <div className="prod-type">{p.type}</div>
                 <ul className="prod-features">
-                  {p.features.map((f, i) => (
+                  {p.features.map((f,i)=>(
                     <li key={i}>
-                      <span className={f.check ? 'check' : 'dash'}>{f.check ? '✓' : '–'}</span>
+                      <span style={{color:f.check?'var(--green)':'var(--ink-faint)'}}>{f.check?'✓':'–'}</span>
                       {f.text}
                     </li>
                   ))}
@@ -54,36 +58,40 @@ export default function Home() {
               </div>
             ))}
           </div>
-          <div style={{textAlign:'center', marginTop:32}}>
+          <div style={{textAlign:'center',marginTop:32}}>
             <Link to="/products/digicert" className="btn btn-secondary">View all certificates</Link>
           </div>
         </div>
       </div>
 
-      <div className="section">
+      {/* Category cards */}
+      <div className="section" style={{background:'var(--canvas)'}}>
         <div className="container">
-          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:24}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:24}}>
             {[
-              { icon: '🔒', title: 'DigiCert & Thawte', desc: 'Premium OV and EV certificates with industry-leading warranty and priority validation.', link: '/products/digicert' },
-              { icon: '⚡', title: 'Automation products', desc: 'Set once, automate forever. RapidSSL and GeoTrust plans with full lifecycle management.', link: '/products/automation' },
-              { icon: '✉️', title: 'VMC / CMC', desc: 'Display your brand logo in email clients. BIMI standard compliant certificates.', link: '/products/vmc' },
-              { icon: '🌐', title: 'RapidSSL & GeoTrust', desc: 'Fast DV and OV certificates for any domain at competitive pricing.', link: '/products/rapidssl' },
-            ].map(c => (
-              <Link key={c.link} to={c.link} className="card" style={{display:'block', transition:'box-shadow .2s', cursor:'pointer'}} onMouseEnter={e => e.currentTarget.style.boxShadow='var(--shadow-md)'} onMouseLeave={e => e.currentTarget.style.boxShadow=''}>
-                <div style={{fontSize:28, marginBottom:10}}>{c.icon}</div>
+              {icon:'🔒',title:'DigiCert & Thawte',desc:'Premium OV and EV certificates with industry-leading warranty and priority validation.',link:'/products/digicert'},
+              {icon:'⚡',title:'Automation products',desc:'Set once, automate forever. RapidSSL and GeoTrust plans with full lifecycle management.',link:'/products/automation'},
+              {icon:'✉️',title:'VMC / CMC',desc:'Display your brand logo in email clients. BIMI standard compliant certificates.',link:'/products/vmc'},
+              {icon:'🌐',title:'RapidSSL & GeoTrust',desc:'Fast DV and OV certificates for any domain at competitive pricing.',link:'/products/rapidssl'},
+            ].map(c=>(
+              <Link key={c.link} to={c.link} className="card" style={{display:'block',transition:'box-shadow .2s, transform .15s'}}
+                onMouseEnter={e=>{e.currentTarget.style.boxShadow='var(--shadow-md)';e.currentTarget.style.transform='translateY(-1px)'}}
+                onMouseLeave={e=>{e.currentTarget.style.boxShadow='';e.currentTarget.style.transform=''}}>
+                <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div>
                 <h3 style={{marginBottom:8}}>{c.title}</h3>
-                <p style={{fontSize:14, color:'var(--ink-muted)'}}>{c.desc}</p>
+                <p style={{fontSize:14,color:'var(--ink-muted)'}}>{c.desc}</p>
               </Link>
             ))}
           </div>
         </div>
       </div>
 
-      <div style={{background:'var(--blue-hero)', padding:'60px 0', textAlign:'center'}}>
+      {/* CTA band — matches SSLVault gradient */}
+      <div style={{background:'linear-gradient(135deg,#3d7cc4 0%,#1e4f8a 100%)',padding:'64px 0',textAlign:'center'}}>
         <div className="container">
-          <h2 style={{color:'var(--white)', marginBottom:12}}>Need volume pricing or a custom arrangement?</h2>
-          <p style={{color:'rgba(255,255,255,.55)', marginBottom:28}}>We work directly with Certificate Authorities. Get the right certificate at the right price.</p>
-          <a href="mailto:mathivanan@gogetssl.com" className="btn btn-ghost">Contact us</a>
+          <h2 style={{color:'var(--white)',marginBottom:12}}>Need volume pricing or a custom arrangement?</h2>
+          <p style={{color:'rgba(255,255,255,.75)',marginBottom:28}}>We work directly with Certificate Authorities. Get the right certificate at the right price.</p>
+          <a href="mailto:mathivanan@gogetssl.com" className="btn btn-ghost">Contact us →</a>
         </div>
       </div>
 
