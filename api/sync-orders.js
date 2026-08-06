@@ -1,9 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
-
 const HEADERS = { Authorization: `GGS ${process.env.GOGETSSL_PARTNER_CODE}:${process.env.GOGETSSL_API_PASSWORD}` }
 const BASE = 'https://my.gogetssl.com/api/v2/certificates'
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cbfwizrivaaqibykulis.supabase.co'
 
 const PRODUCT_NAMES = {
   300: 'Sectigo ACME CaaS',
@@ -14,118 +11,118 @@ const PRODUCT_NAMES = {
 }
 const CA_NAMES = { 300: 'Sectigo', 400: 'RapidSSL', 401: 'RapidSSL', 402: 'GeoTrust', 403: 'GeoTrust' }
 
-// Fetch with 8s timeout
-async function fetchWithTimeout(url, opts = {}, ms = 8000) {
-  const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), ms)
+async function fetchItem(url, signal) {
   try {
-    const r = await fetch(url, { ...opts, signal: ctrl.signal })
-    clearTimeout(t)
-    return r
-  } catch { clearTimeout(t); return null }
+    const r = await fetch(url, { headers: HEADERS, signal })
+    if (!r.ok) return null
+    const d = await r.json()
+    return d?.order ? d : null
+  } catch { return null }
 }
 
-// Scan AIS items in parallel batches of 10
-async function scanAIS(start, end) {
-  const found = []
-  for (let batch = start; batch <= end; batch += 10) {
-    const ids = Array.from({ length: Math.min(10, end - batch + 1) }, (_, i) => batch + i)
-    const results = await Promise.all(ids.map(async id => {
-      const r = await fetchWithTimeout(`${BASE}/ais/${id}`, { headers: HEADERS })
-      if (!r || !r.ok) return null
-      try { const d = await r.json(); return d?.order ? { item_id: id, data: d } : null } catch { return null }
-    }))
-    found.push(...results.filter(Boolean))
-  }
-  return found
-}
-
-// Scan ACME orders in parallel batches
-async function scanACME(orderIds) {
-  const found = []
-  for (let i = 0; i < orderIds.length; i += 10) {
-    const batch = orderIds.slice(i, i + 10)
-    const results = await Promise.all(batch.map(async id => {
-      const r = await fetchWithTimeout(`${BASE}/acme/${id}`, { headers: HEADERS })
-      if (!r || !r.ok) return null
-      try { const d = await r.json(); return d?.order ? { order_id: id, data: d } : null } catch { return null }
-    }))
-    found.push(...results.filter(Boolean))
-  }
-  return found
+async function sbUpsert(row, authHeader) {
+  // Use ON CONFLICT via upsert endpoint
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+    method: 'POST',
+    headers: {
+      'apikey': process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || 'sb_publishable_rTbE5qvU7nDlDevl-WviAg_LSWim1hb',
+      'Authorization': authHeader,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify(row)
+  })
+  return r.ok ? null : await r.text()
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).end()
+  // Get admin JWT from request header (sent by frontend)
+  const authHeader = req.headers.authorization || req.headers['x-auth-token'] || ''
+  if (!authHeader) {
+    return res.status(401).json({ error: 'Authorization header required' })
+  }
+
+  const ctrl = new AbortController()
+  const timeout = setTimeout(() => ctrl.abort(), 25000)
 
   const synced = [], errors = []
 
   try {
-    // --- AIS orders (item IDs 980–1050, parallel) ---
-    const aisItems = await scanAIS(980, 1050)
+    // Parallel scan AIS items 980–1060
+    const aisIds = Array.from({ length: 81 }, (_, i) => 980 + i)
+    const batches = []
+    for (let i = 0; i < aisIds.length; i += 15) batches.push(aisIds.slice(i, i + 15))
 
-    for (const { item_id, data } of aisItems) {
-      const order = data.order
-      const item = (data.items || [])[0] || {}
-      const sub = item.subscription || {}
-      const row = {
-        gogetssl_order_id: order.id,
-        gogetssl_item_id: item_id,
-        product_name: PRODUCT_NAMES[item.product_id] || `Product #${item.product_id}`,
-        ca: CA_NAMES[item.product_id] || 'GoGetSSL',
-        domain: (item.domains || [])[0] || null,
-        status: order.status,
-        is_automation: true,
-        api_response: data,
-        subscription_begin: sub.begin || null,
-        next_renewal: sub.next_renewal || null,
-        updated_at: new Date().toISOString(),
+    for (const batch of batches) {
+      const results = await Promise.all(
+        batch.map(id => fetchItem(`${BASE}/ais/${id}`, ctrl.signal))
+      )
+      for (let i = 0; i < results.length; i++) {
+        const d = results[i]
+        if (!d) continue
+        const order = d.order
+        const item = (d.items || [])[0] || {}
+        const sub = item.subscription || {}
+        const row = {
+          gogetssl_order_id: order.id,
+          gogetssl_item_id: batch[i],
+          product_name: PRODUCT_NAMES[item.product_id] || `Product #${item.product_id}`,
+          ca: CA_NAMES[item.product_id] || 'GoGetSSL',
+          domain: (item.domains || [])[0] || null,
+          status: order.status,
+          is_automation: true,
+          api_response: d,
+          subscription_begin: sub.begin || null,
+          next_renewal: sub.next_renewal || null,
+          updated_at: new Date().toISOString(),
+        }
+        const err = await sbUpsert(row, authHeader)
+        if (err) errors.push(`AIS item ${batch[i]}: ${err}`)
+        else synced.push(order.id)
       }
-      const { error } = await supabase.from('orders').upsert(row, { onConflict: 'gogetssl_order_id' })
-      if (error) errors.push(`AIS ${order.id}: ${error.message}`)
-      else synced.push(order.id)
     }
 
-    // --- ACME/CaaS orders (scan order IDs around known range) ---
-    // Build candidate list: known IDs ± 50 range
-    const { data: existing } = await supabase.from('orders').select('gogetssl_order_id').not('gogetssl_order_id', 'is', null)
-    const knownIds = (existing || []).map(r => r.gogetssl_order_id).filter(Boolean)
-
-    // Candidate ACME order IDs to scan
-    const baseId = knownIds.length > 0 ? Math.min(...knownIds) : 3575500
-    const candidates = Array.from({ length: 100 }, (_, i) => baseId - 10 + i)
-      .filter(id => !knownIds.includes(id) && id > 0)
-
-    const acmeFound = await scanACME(candidates)
-    for (const { data } of acmeFound) {
-      const order = data.order
-      const item = (data.items || [])[0] || {}
-      const sub = item.subscription || {}
-      const row = {
-        gogetssl_order_id: order.id,
-        product_name: 'Sectigo ACME CaaS',
-        ca: 'Sectigo',
-        domain: (item.domains || [])[0] || null,
-        status: order.status,
-        is_automation: true,
-        api_response: data,
-        next_renewal: sub.next_renewal || null,
-        updated_at: new Date().toISOString(),
+    // ACME orders — scan known range around 3575500–3575700
+    const acmeIds = Array.from({ length: 200 }, (_, i) => 3575500 + i)
+    for (let i = 0; i < acmeIds.length; i += 20) {
+      const batch = acmeIds.slice(i, i + 20)
+      const results = await Promise.all(
+        batch.map(id => fetchItem(`${BASE}/acme/${id}`, ctrl.signal))
+      )
+      for (let j = 0; j < results.length; j++) {
+        const d = results[j]
+        if (!d) continue
+        const order = d.order
+        const item = (d.items || [])[0] || {}
+        const sub = item.subscription || {}
+        const row = {
+          gogetssl_order_id: order.id,
+          product_name: 'Sectigo ACME CaaS',
+          ca: 'Sectigo',
+          domain: (item.domains || [])[0] || null,
+          status: order.status,
+          is_automation: true,
+          api_response: d,
+          next_renewal: sub.next_renewal || null,
+          updated_at: new Date().toISOString(),
+        }
+        const err = await sbUpsert(row, authHeader)
+        if (err) errors.push(`ACME ${order.id}: ${err}`)
+        else if (!synced.includes(order.id)) synced.push(order.id)
       }
-      const { error } = await supabase.from('orders').upsert(row, { onConflict: 'gogetssl_order_id' })
-      if (error) errors.push(`ACME ${order.id}: ${error.message}`)
-      else synced.push(order.id)
     }
 
+    clearTimeout(timeout)
     return res.status(200).json({
       synced: synced.length,
       order_ids: synced,
-      errors,
+      errors: errors.slice(0, 5),
       message: synced.length > 0
-        ? `Synced ${synced.length} orders: ${synced.join(', ')}`
-        : 'No new orders found in scanned range'
+        ? `Synced ${synced.length} orders`
+        : 'No orders found in scanned range (items 980–1060, orders 3575500–3575700)'
     })
   } catch (err) {
+    clearTimeout(timeout)
     return res.status(500).json({ error: err.message, synced: synced.length })
   }
 }
