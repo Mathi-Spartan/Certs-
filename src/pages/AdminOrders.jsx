@@ -26,14 +26,21 @@ export default function AdminOrders() {
   }
 
   async function syncFromAPI() {
-    setSyncing(true); setSyncMsg(null)
+    setSyncing(true)
+    setSyncMsg({ type: 'info', text: 'Scanning GoGetSSL API… (~15 seconds)' })
     try {
       const res = await fetch('/api/sync-orders')
       const data = await res.json()
-      setSyncMsg({ type: 'success', text: `Synced ${data.synced || 0} orders from GoGetSSL` })
-      loadOrders()
-    } catch {
-      setSyncMsg({ type: 'error', text: 'Sync failed — check API credentials' })
+      if (data.error) {
+        setSyncMsg({ type: 'error', text: `Sync error: ${data.error}` })
+      } else if (data.synced === 0) {
+        setSyncMsg({ type: 'info', text: data.message || 'No new orders found' })
+      } else {
+        setSyncMsg({ type: 'success', text: `✓ Synced ${data.synced} order${data.synced > 1 ? 's' : ''}: ${data.order_ids?.join(', ')}` })
+        loadOrders()
+      }
+    } catch (e) {
+      setSyncMsg({ type: 'error', text: `Network error: ${e.message}` })
     }
     setSyncing(false)
   }
@@ -55,30 +62,43 @@ export default function AdminOrders() {
   })
 
   const cats = [
-    { key: 'all', label: `All (${orders.length})` },
-    { key: 'unassigned', label: `Unassigned (${orders.filter(o => !o.assigned_to).length})` },
-    { key: 'active', label: `Active (${orders.filter(o => o.status === 'active').length})` },
-    { key: 'automation', label: `Automation (${orders.filter(o => o.is_automation).length})` },
+    { k: 'all', l: `All (${orders.length})` },
+    { k: 'unassigned', l: `Unassigned (${orders.filter(o => !o.assigned_to).length})` },
+    { k: 'active', l: `Active (${orders.filter(o => o.status === 'active').length})` },
+    { k: 'automation', l: `Automation (${orders.filter(o => o.is_automation).length})` },
   ]
 
   return (
     <DashShell>
       <div className="dash-topbar">
         <h2 style={{ fontSize: '1.1rem' }}>All orders</h2>
-        <div style={{ display: 'flex', gap: 10 }}>
-          {syncMsg && <span className={`pill pill-${syncMsg.type === 'success' ? 'green' : 'red'}`} style={{ alignSelf: 'center' }}>{syncMsg.text}</span>}
-          <button className="btn btn-secondary btn-sm" onClick={syncFromAPI} disabled={syncing}>
-            {syncing ? <span className="spinner" /> : '↻ Sync from GoGetSSL'}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary btn-sm" onClick={syncFromAPI} disabled={syncing}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {syncing ? <><span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> Syncing…</> : '↻ Sync from GoGetSSL'}
           </button>
           <Link to="/admin/assign" className="btn btn-primary btn-sm">Assign orders</Link>
         </div>
       </div>
+
       <div className="dash-content">
+        {syncMsg && (
+          <div className={`alert alert-${syncMsg.type === 'success' ? 'success' : syncMsg.type === 'error' ? 'error' : 'info'}`}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{syncMsg.text}</span>
+            <button onClick={() => setSyncMsg(null)} style={{ color: 'inherit', opacity: .6, fontSize: 16 }}>×</button>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input className="form-input" placeholder="Search domain, product, order ID…" value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 300 }} />
-          <div className="cat-tabs" style={{ margin: 0, border: 'none', gap: 4 }}>
+          <input className="form-input" placeholder="Search domain, product, order ID…"
+            value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 300 }} />
+          <div style={{ display: 'flex', gap: 2 }}>
             {cats.map(c => (
-              <button key={c.key} onClick={() => setFilter(c.key)} className={`cat-tab ${filter === c.key ? 'active' : ''}`} style={{ padding: '6px 14px' }}>{c.label}</button>
+              <button key={c.k} onClick={() => setFilter(c.k)}
+                className={`cat-tab ${filter === c.k ? 'active' : ''}`} style={{ padding: '6px 14px' }}>
+                {c.l}
+              </button>
             ))}
           </div>
         </div>
@@ -89,14 +109,14 @@ export default function AdminOrders() {
           ) : filtered.length === 0 ? (
             <div className="empty-state">
               <h3>{orders.length === 0 ? 'No orders yet' : 'No matching orders'}</h3>
-              <p style={{ fontSize: 13 }}>
+              <p style={{ fontSize: 13, marginBottom: 16 }}>
                 {orders.length === 0
-                  ? 'Click "Sync from GoGetSSL" to pull your live orders from the API.'
-                  : 'Try adjusting your search or filter.'}
+                  ? 'Click Sync to pull your live GoGetSSL orders. Scans automation items 980–1050.'
+                  : 'Adjust your search or filter.'}
               </p>
               {orders.length === 0 && (
-                <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={syncFromAPI} disabled={syncing}>
-                  {syncing ? <span className="spinner" /> : 'Sync orders now'}
+                <button className="btn btn-primary btn-sm" onClick={syncFromAPI} disabled={syncing}>
+                  {syncing ? <><span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> Syncing…</> : '↻ Sync now'}
                 </button>
               )}
             </div>
@@ -108,6 +128,7 @@ export default function AdminOrders() {
                     <th>GoGetSSL ID</th>
                     <th>Product</th>
                     <th>Domain</th>
+                    <th>CA</th>
                     <th>Status</th>
                     <th>Type</th>
                     <th>Assigned to</th>
@@ -121,9 +142,8 @@ export default function AdminOrders() {
                       <td><span className="mono">#{o.gogetssl_order_id || '—'}</span></td>
                       <td style={{ maxWidth: 160, fontSize: 13 }}>{o.product_name}</td>
                       <td><span className="mono" style={{ fontSize: 12 }}>{o.domain || '—'}</span></td>
-                      <td>
-                        <span className={`pill pill-${STATUS_PILL[o.status] || 'gray'}`}>{o.status}</span>
-                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{o.ca || '—'}</td>
+                      <td><span className={`pill pill-${STATUS_PILL[o.status] || 'gray'}`}>{o.status}</span></td>
                       <td>
                         {o.is_automation
                           ? <span className="pill pill-blue">Automation</span>
@@ -131,14 +151,15 @@ export default function AdminOrders() {
                       </td>
                       <td style={{ fontSize: 13 }}>
                         {o.partner
-                          ? <span>{o.partner.full_name || o.partner.email}</span>
+                          ? o.partner.full_name || o.partner.email
                           : <span style={{ color: 'var(--amber)', fontWeight: 500 }}>Unassigned</span>}
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
                         {o.next_renewal ? new Date(o.next_renewal).toLocaleDateString() : '—'}
                       </td>
                       <td>
-                        <Link to={`/admin/assign?order=${o.id}`} style={{ fontSize: 12, color: 'var(--blue-accent)' }}>
+                        <Link to={`/admin/assign?order=${o.id}`}
+                          style={{ fontSize: 12, color: 'var(--blue-accent)' }}>
                           {o.assigned_to ? 'Reassign' : 'Assign →'}
                         </Link>
                       </td>
