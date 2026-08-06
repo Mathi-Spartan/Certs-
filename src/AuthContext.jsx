@@ -23,14 +23,25 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function fetchProfile(uid) {
-    const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
-    setProfile(data)
-    setLoading(false)
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .single()
+      // If table doesn't exist yet, data will be null — that's ok
+      setProfile(data || null)
+    } catch {
+      setProfile(null)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function signOut() {
     await supabase.auth.signOut()
     setProfile(null)
+    setSession(null)
   }
 
   return (
