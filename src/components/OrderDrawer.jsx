@@ -120,6 +120,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
   const [approverEmail, setApproverEmail] = useState('')
   // Result
   const [dcvResult, setDcvResult] = useState(null)
+  const [newOrderId, setNewOrderId] = useState(null)
   const [generating, setGenerating] = useState(false)
 
   useEffect(() => { fetchLive() }, [order?.gogetssl_order_id])
@@ -127,7 +128,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
   async function fetchLive() {
     if (!order) return
     setLoading(true); setLd(null); setActionMsg(null); setCancelConfirm(false)
-    setShowGen(false); setStep(1); setDcvResult(null)
+    setShowGen(false); setStep(1); setDcvResult(null); setNewOrderId(null)
     try {
       const res = await fetch('/api/order-action', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -190,17 +191,32 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
         setGenerating(false); return
       }
       // Extract DCV from response
-      const newDcv = {
-        dcv_method: r.dcv_method || dcvMethod,
-        approver_method: r.approver_method || {},
-        domain: r.domain || domain
+      // Use DCV data from the response directly — don't reload the old order
+      const responseDomain = r.domain || domain
+      const responseAM = r.approver_method || {}
+      const responseDcv = r.dcv_method || dcvMethod
+
+      // If response has no approver_method data, fetch the new order's status
+      let finalAM = responseAM
+      if (r.order_id && (!responseAM || Object.keys(responseAM).length === 0 || !Object.values(responseAM).some(v => v && typeof v === 'object' && Object.keys(v).length > 0))) {
+        try {
+          const statusRes = await fetch('/api/order-action', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'status', order_id: r.order_id })
+          })
+          const statusData = await statusRes.json()
+          if (statusData.result?.approver_method) finalAM = statusData.result.approver_method
+        } catch(e) {}
       }
-      setDcvResult(newDcv)
+
+      setDcvResult({ dcv_method: responseDcv, approver_method: finalAM, domain: responseDomain })
+      if (r.order_id) setNewOrderId(r.order_id)
       setShowGen(false); setStep(1)
       setActionMsg({ type:'success', text: isIncomplete
-        ? `✓ Certificate generated! New order #${r.order_id}. Follow the ${dcvMethod.toUpperCase()} validation instructions below.`
+        ? `✓ Certificate generated! New order #${r.order_id} is processing. Follow the ${responseDcv.toUpperCase()} validation instructions below.`
         : '✓ Reissue submitted. Follow the validation instructions below.' })
-      fetchLive(); onRefresh?.()
+      onRefresh?.()
+      // Don't reload the old incomplete order — keep showing DCV instructions
     } catch(e) { setActionMsg({ type:'error', text: e.message }) }
     setGenerating(false)
   }
@@ -277,6 +293,24 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
                 <div style={{fontWeight:600,color:'#92400e',marginBottom:4}}>Awaiting configuration — action needed</div>
                 <p style={{fontSize:13,color:'#78350f',marginBottom:12}}>Submit your CSR, contact details and domain validation method to generate the certificate.</p>
                 <button className="btn btn-primary btn-sm" onClick={()=>setShowGen(true)} style={{background:'#d97706'}}>⚙ Generate Certificate</button>
+              </div>
+            </div>
+          )}
+
+          {/* New order created banner */}
+          {!loading&&newOrderId&&(
+            <div style={{background:'var(--green-bg)',border:'1px solid rgba(22,163,74,.25)',borderRadius:10,padding:'14px 18px',marginBottom:14,display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:600,color:'var(--green-text)',fontSize:14,marginBottom:3}}>✓ New order created: #{newOrderId}</div>
+                <div style={{fontSize:13,color:'var(--green-text)'}}>This incomplete order stays as-is. Your certificate is being processed under the new order.</div>
+              </div>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                <a href={`https://my.gogetssl.com/en/certificates/${newOrderId}`} target="_blank" rel="noreferrer"
+                  className="btn btn-secondary btn-sm" style={{fontSize:12}}>View new order in GoGetSSL ↗</a>
+                <button className="btn btn-secondary btn-sm" style={{fontSize:12}} onClick={async()=>{
+                  // Sync the new order to DB and refresh
+                  onRefresh?.()
+                }}>Sync orders</button>
               </div>
             </div>
           )}
