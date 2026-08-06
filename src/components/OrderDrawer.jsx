@@ -285,15 +285,31 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
             </div>
           )}
 
-          {/* Incomplete warning */}
+          {/* Incomplete warning — redirect to portal, no new order */}
           {!loading&&ld&&isIncomplete&&!showGen&&(
-            <div style={{background:'#fffbeb',border:'1px solid #f59e0b',borderRadius:10,padding:'16px 18px',marginBottom:18,display:'flex',gap:14}}>
-              <div style={{fontSize:28,flexShrink:0}}>⚠️</div>
-              <div>
-                <div style={{fontWeight:600,color:'#92400e',marginBottom:4}}>Awaiting configuration — action needed</div>
-                <p style={{fontSize:13,color:'#78350f',marginBottom:12}}>Submit your CSR, contact details and domain validation method to generate the certificate.</p>
-                <button className="btn btn-primary btn-sm" onClick={()=>setShowGen(true)} style={{background:'#d97706'}}>⚙ Generate Certificate</button>
+            <div style={{background:'#fffbeb',border:'1px solid #f59e0b',borderRadius:10,padding:'16px 18px',marginBottom:18}}>
+              <div style={{display:'flex',gap:14,alignItems:'flex-start',marginBottom:12}}>
+                <div style={{fontSize:24,flexShrink:0}}>⚠️</div>
+                <div>
+                  <div style={{fontWeight:700,color:'#92400e',marginBottom:4,fontSize:14}}>CSR submission required</div>
+                  <p style={{fontSize:13,color:'#78350f'}}>
+                    This order is awaiting a CSR. GoGetSSL's public API does not support submitting a CSR to an incomplete order — this must be done through the GoGetSSL partner portal.
+                  </p>
+                </div>
               </div>
+              <div style={{background:'rgba(255,255,255,.6)',borderRadius:8,padding:'12px 14px',marginBottom:12,fontSize:13,color:'#92400e'}}>
+                <strong>Steps in GoGetSSL portal:</strong>
+                <ol style={{marginTop:6,paddingLeft:20,display:'flex',flexDirection:'column',gap:4}}>
+                  <li>Click "Open in GoGetSSL ↗" above</li>
+                  <li>Click <strong>"Generate Certificate"</strong> on the order page</li>
+                  <li>Paste your CSR and choose DNS / HTTP / Email validation</li>
+                  <li>Come back here and click <strong>"Sync from GoGetSSL"</strong> to see the updated order with DCV values</li>
+                </ol>
+              </div>
+              <a href={`https://my.gogetssl.com/en/certificates/${order?.gogetssl_order_id}`} target="_blank" rel="noreferrer"
+                className="btn btn-primary btn-sm" style={{background:'#d97706',borderColor:'#d97706'}}>
+                Open order in GoGetSSL portal to submit CSR ↗
+              </a>
             </div>
           )}
 
@@ -502,7 +518,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
               <div style={{borderTop:'1px solid var(--border)',paddingTop:14,marginBottom:16}}>
                 <div style={{fontSize:11,fontWeight:600,color:'var(--ink-muted)',letterSpacing:'.07em',marginBottom:10}}>ACTIONS</div>
                 <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                  {isIncomplete&&!showGen&&<button className="btn btn-primary btn-sm" onClick={()=>setShowGen(true)} style={{background:'#d97706'}}>⚙ Generate Certificate</button>}
+                  {isIncomplete&&<a href={`https://my.gogetssl.com/en/certificates/${order?.gogetssl_order_id}`} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm" style={{background:'#d97706'}}>Submit CSR in GoGetSSL ↗</a>}
                   {hasCert&&<>
                     <button className="btn btn-secondary btn-sm" onClick={()=>download(ld.crt_code,`cert_${ld.order_id}.crt`)}>↓ Certificate</button>
                     {hasCa&&<button className="btn btn-secondary btn-sm" onClick={()=>download(ld.ca_code,`ca_${ld.order_id}.crt`)}>↓ CA Bundle</button>}
