@@ -529,10 +529,20 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
                   <a href={`https://my.gogetssl.com/en/certificates/${order?.gogetssl_order_id}`} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">GoGetSSL portal ↗</a>
                 </div>
                 {cancelConfirm&&(
-                  <div style={{marginTop:10,background:'var(--red-bg)',padding:'12px 14px',borderRadius:8,border:'1px solid rgba(220,38,38,.2)',display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
-                    <span style={{fontSize:13,color:'var(--red-text)',flex:1}}>Cancel order #{order?.gogetssl_order_id}? Cannot be undone.</span>
-                    <button className="btn btn-danger btn-sm" onClick={()=>doAction('cancel',{reason:'end'})}>Confirm cancel</button>
-                    <button className="btn btn-secondary btn-sm" onClick={()=>setCancelConfirm(false)}>No, keep</button>
+                  <div style={{marginTop:10,background:'var(--red-bg)',padding:'12px 14px',borderRadius:8,border:'1px solid rgba(220,38,38,.2)'}}>
+                    <div style={{fontSize:13,color:'var(--red-text)',marginBottom:10,fontWeight:500}}>Cancel order #{order?.gogetssl_order_id}?</div>
+                    <div style={{fontSize:12,color:'var(--red-text)',marginBottom:12,opacity:.85}}>
+                      This calls GoGetSSL's cancel API and updates the order status. Cannot be undone for active certificates.
+                    </div>
+                    <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                      <button className="btn btn-danger btn-sm" onClick={async()=>{
+                        setCancelConfirm(false)
+                        await doAction('cancel', { reason:'end' })
+                        // Force reload to show updated status
+                        setTimeout(()=>fetchLive(), 1000)
+                      }}>Confirm — Cancel in GoGetSSL</button>
+                      <button className="btn btn-secondary btn-sm" onClick={()=>setCancelConfirm(false)}>No, keep</button>
+                    </div>
                   </div>
                 )}
               </div>

@@ -148,6 +148,23 @@ export default async function handler(req, res) {
           body: new URLSearchParams({ auth_key: key, order_id, reason: body.reason || 'end' })
         })
         result = await r.json()
+
+        // GoGetSSL returns success:true even for already-cancelled orders
+        // Treat "already cancelled" as success, not an error
+        if (result.error && result.message?.toLowerCase().includes('already in cancelled')) {
+          result = { success: true, message: 'Order is already cancelled in GoGetSSL.' }
+        }
+
+        // Sync the cancelled status back to Supabase regardless
+        if (result.success === true || result.success === 'true') {
+          const { createClient } = await import('@supabase/supabase-js')
+          const sb = createClient(
+            process.env.SUPABASE_URL || 'https://cbfwizrivaaqibykulis.supabase.co',
+            process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_rTbE5qvU7nDlDevl-WviAg_LSWim1hb'
+          )
+          await sb.from('orders').update({ status: 'cancelled', updated_at: new Date().toISOString() })
+            .eq('gogetssl_order_id', Number(order_id))
+        }
         break
       }
 
