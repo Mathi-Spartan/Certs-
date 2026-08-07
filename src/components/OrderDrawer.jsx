@@ -619,6 +619,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
               )}
             </div>
           )}
+            {!loading&&ld&&(
             <>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:18}}>
                 {[
