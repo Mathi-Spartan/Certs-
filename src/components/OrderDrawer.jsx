@@ -119,6 +119,11 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
   const [dcvMethod, setDcvMethod] = useState('dns')
   const [approverEmail, setApproverEmail] = useState('')
   // Result
+  const [showDcvChange, setShowDcvChange] = useState(false)
+  const [newDcvMethod, setNewDcvMethod] = useState('')
+  const [newApproverEmail, setNewApproverEmail] = useState('')
+  const [dcvChanging, setDcvChanging] = useState(false)
+  const [dcvChecking, setDcvChecking] = useState(false)
   const [dcvResult, setDcvResult] = useState(null)
   const [newOrderId, setNewOrderId] = useState(null)
   const [generating, setGenerating] = useState(false)
@@ -489,8 +494,131 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
             </div>
           )}
 
-          {/* Order info */}
-          {!loading&&ld&&(
+          {/* DCV Management panel — shown for processing/pending orders that have a dcv_method */}
+          {!loading && ld && ['processing','pending'].includes(ld.status) && ld.dcv_method && (
+            <div style={{border:'1px solid var(--border)',borderRadius:10,padding:'16px 18px',marginBottom:18}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14}}>Domain Validation</div>
+                  <div style={{fontSize:12,color:'var(--ink-muted)',marginTop:2}}>
+                    Current method: <strong style={{color:'var(--blue-accent)',textTransform:'uppercase'}}>{ld.dcv_method}</strong>
+                    {' · '}DCV Status: <strong style={{color: ld.dcv_status===2?'var(--green)':'var(--amber)'}}>{ld.dcv_status===2?'✓ Verified':'Pending'}</strong>
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                  {/* Check DCV / trigger issuance */}
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={dcvChecking}
+                    onClick={async () => {
+                      setDcvChecking(true); setActionMsg(null)
+                      try {
+                        const res = await fetch('/api/order-action', {
+                          method:'POST', headers:{'Content-Type':'application/json'},
+                          body: JSON.stringify({ action:'revalidate', order_id: order.gogetssl_order_id, domain: ld.domain })
+                        })
+                        const data = await res.json()
+                        const r = data.result || {}
+                        if (r.error || r.success === false) {
+                          setActionMsg({ type:'error', text: r.message || r.description || JSON.stringify(r) })
+                        } else {
+                          setActionMsg({ type:'success', text:'✓ DCV check triggered. Refreshing status…' })
+                          setTimeout(()=>fetchLive(), 2000)
+                        }
+                      } catch(e) { setActionMsg({ type:'error', text: e.message }) }
+                      setDcvChecking(false)
+                    }}
+                    style={{display:'flex',alignItems:'center',gap:6}}
+                  >
+                    {dcvChecking?<><span className="spinner" style={{width:13,height:13,borderWidth:2}}/>Checking…</>:'↻ Check DCV status'}
+                  </button>
+                  {/* Change DCV method */}
+                  <button className="btn btn-secondary btn-sm" onClick={()=>{setShowDcvChange(v=>!v);setNewDcvMethod(ld.dcv_method);setNewApproverEmail('')}}>
+                    {showDcvChange?'Cancel':'Change method'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Change DCV method panel */}
+              {showDcvChange && (
+                <div style={{borderTop:'1px solid var(--border)',paddingTop:14}}>
+                  <div style={{fontSize:13,fontWeight:500,marginBottom:10}}>Switch to a different validation method</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:12}}>
+                    {[
+                      {v:'dns', icon:'🌐', label:'DNS TXT record', desc:'Add a TXT record to DNS. Works even if the site is offline.'},
+                      {v:'http', icon:'📁', label:'HTTP file validation', desc:'Create a file on your web server at a specific URL.'},
+                      {v:'https', icon:'🔒', label:'HTTPS file validation', desc:'Same as HTTP but over HTTPS.'},
+                      {v:'email', icon:'✉️', label:'Email validation', desc:'Approval email sent to a domain admin address.'},
+                    ].map(opt=>(
+                      <label key={opt.v} style={{display:'flex',gap:10,padding:'10px 12px',border:`1.5px solid ${newDcvMethod===opt.v?'var(--blue-accent)':'var(--border)'}`,borderRadius:7,cursor:'pointer',background:newDcvMethod===opt.v?'var(--blue-sky)':'var(--white)',opacity:opt.v===ld.dcv_method?0.65:1}}>
+                        <input type="radio" name="new_dcv" value={opt.v} checked={newDcvMethod===opt.v} onChange={e=>setNewDcvMethod(e.target.value)} style={{marginTop:2,flexShrink:0}} disabled={opt.v===ld.dcv_method}/>
+                        <div>
+                          <div style={{fontWeight:600,fontSize:13}}>{opt.icon} {opt.label} {opt.v===ld.dcv_method&&<span style={{fontSize:11,color:'var(--ink-muted)'}}>(current)</span>}</div>
+                          <div style={{fontSize:12,color:'var(--ink-muted)'}}>{opt.desc}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  {newDcvMethod==='email' && (
+                    <div className="form-group" style={{marginBottom:12}}>
+                      <label className="form-label">Approver email <span style={{color:'var(--red)'}}>*</span></label>
+                      <select className="form-input form-select" value={newApproverEmail} onChange={e=>setNewApproverEmail(e.target.value)}>
+                        <option value="">— Select email —</option>
+                        {['admin','administrator','postmaster','hostmaster','webmaster'].map(p=>{
+                          const e=`${p}@${(ld.domain||'').replace(/^\*\./,'')}`
+                          return <option key={e} value={e}>{e}</option>
+                        })}
+                      </select>
+                    </div>
+                  )}
+
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={dcvChanging || newDcvMethod===ld.dcv_method || (newDcvMethod==='email'&&!newApproverEmail)}
+                    onClick={async()=>{
+                      setDcvChanging(true); setActionMsg(null)
+                      try {
+                        const res = await fetch('/api/order-action', {
+                          method:'POST', headers:{'Content-Type':'application/json'},
+                          body: JSON.stringify({
+                            action:'change_dcv',
+                            order_id: order.gogetssl_order_id,
+                            domain: ld.domain,
+                            new_method: newDcvMethod,
+                            approver_email: newDcvMethod==='email' ? newApproverEmail : undefined
+                          })
+                        })
+                        const data = await res.json()
+                        const r = data.result || {}
+                        if (r.error || r.success === false) {
+                          setActionMsg({ type:'error', text: r.message || r.description || JSON.stringify(r) })
+                        } else {
+                          setActionMsg({ type:'success', text:`✓ Validation method changed to ${newDcvMethod.toUpperCase()}. New instructions below.` })
+                          setShowDcvChange(false)
+                          // Refresh to get new DCV data
+                          setTimeout(async()=>{
+                            await fetchLive()
+                          }, 1000)
+                        }
+                      } catch(e) { setActionMsg({ type:'error', text: e.message }) }
+                      setDcvChanging(false)
+                    }}
+                    style={{display:'flex',alignItems:'center',gap:6}}
+                  >
+                    {dcvChanging?<><span className="spinner" style={{width:13,height:13,borderWidth:2}}/>Changing…</>:`Switch to ${newDcvMethod.toUpperCase()}`}
+                  </button>
+                </div>
+              )}
+
+              {/* Show current DCV instructions inline */}
+              {ld.approver_method && (
+                <div style={{marginTop:showDcvChange?12:0,paddingTop:showDcvChange?12:0,borderTop:showDcvChange?'1px solid var(--border)':'none'}}>
+                  <DcvBox dcvMethod={ld.dcv_method} approverMethod={ld.approver_method} domain={ld.domain}/>
+                </div>
+              )}
+            </div>
+          )}
             <>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:18}}>
                 {[

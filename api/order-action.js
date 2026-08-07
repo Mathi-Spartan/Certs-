@@ -136,6 +136,34 @@ export default async function handler(req, res) {
         break
       }
 
+      // Change DCV method on a processing order
+      case 'change_dcv': {
+        const { domain, new_method, approver_email } = body
+        if (!domain) return res.status(400).json({ error: 'domain required' })
+        if (!new_method) return res.status(400).json({ error: 'new_method required' })
+        const params = new URLSearchParams({ auth_key: key, order_id, domain_name: domain, new_method })
+        if (new_method === 'email' && approver_email) params.set('approver_email', approver_email)
+        r = await fetch(`${V1}/orders/ssl/change_dcv/${order_id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: params
+        })
+        result = await r.json()
+        break
+      }
+
+      // Trigger DCV recheck — CA re-checks the validation and issues cert if valid
+      case 'revalidate': {
+        const { domain } = body
+        r = await fetch(`${V1}/orders/ssl/revalidate/${order_id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ auth_key: key, order_id, ...(domain ? { domain } : {}) })
+        })
+        result = await r.json()
+        break
+      }
+
       case 'resend_email':
         r = await fetch(`${V1}/orders/ssl/resend_validation_email/${order_id}?auth_key=${key}`)
         result = await r.json()
