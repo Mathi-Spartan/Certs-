@@ -9,19 +9,17 @@ async function getKey() {
       pass: process.env.GOGETSSL_API_PASSWORD
     })
   })
-  const d = await r.json()
-  return d.key || null
+  return (await r.json()).key || null
 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
   const body = req.body || {}
   const { action, order_id } = body
-  if (!action) return res.status(400).json({ error: 'action required' })
 
   try {
     const key = await getKey()
-    if (!key) return res.status(500).json({ error: 'GoGetSSL authentication failed' })
+    if (!key) return res.status(500).json({ error: 'GoGetSSL auth failed — check credentials' })
 
     let r, result
 
@@ -32,35 +30,14 @@ export default async function handler(req, res) {
         result = await r.json()
         break
 
-      case 'domain_emails': {
-        const domain = (body.domain || '').replace(/^\*\./, '')
-        if (!domain) return res.status(400).json({ error: 'domain required' })
-        // Standard 5 CA/B Forum email addresses
-        const standardEmails = ['admin','administrator','postmaster','hostmaster','webmaster'].map(p => `${p}@${domain}`)
-        // Also fetch from GoGetSSL for any additional ones
-        const [r1, r2] = await Promise.all([
-          fetch(`${V1}/tools/domain/emails`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ auth_key: key, domain }) }),
-          fetch(`${V1}/tools/domain/emails/geotrust/`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ auth_key: key, domain }) }),
-        ])
-        const d1 = await r1.json(), d2 = await r2.json()
-        const apiEmails = [...new Set([...(d1.ComodoApprovalEmails || []), ...(d1.GeotrustApprovalEmails || []), ...(d2.ComodoApprovalEmails || [])])]
-        // Merge: standard first, then any extra from API
-        const all = [...new Set([...standardEmails, ...apiEmails])]
-        result = { emails: all, standard: standardEmails }
-        break
-      }
-
       case 'decode_csr': {
-        const csr = body.csr || ''
-        if (!csr) return res.status(400).json({ error: 'csr required' })
         r = await fetch(`${V1}/tools/csr/decode`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ auth_key: key, csr })
+          body: new URLSearchParams({ auth_key: key, csr: body.csr || '' })
         })
         const raw = await r.json()
         if (raw.error) return res.status(200).json({ ok: true, action, result: { error: true, message: raw.message } })
-        // Normalize: csrResult wrapper
         const cr = raw.csrResult || raw
         result = {
           cn: cr.CN || cr.cn,
@@ -71,15 +48,15 @@ export default async function handler(req, res) {
           email: cr.Email || cr.email,
           key_size: cr['Key Size'] || cr.key_size,
           key_type: 'RSA',
-          san: cr['dnsName(s)'] || [],
         }
         break
       }
 
-      // Complete an INCOMPLETE order — uses add_ssl_order with product_id from original
-      // This creates a new active order (GoGetSSL's actual behavior for incomplete orders)
-      case 'complete_order': {
-        const { csr, dcv_method, approver_email, product_id, contact } = body
+      // Generate certificate: uses add_ssl_order for ALL cases
+      // This is the ONLY correct API for placing a cert with CSR
+      // incomplete orders are shells — ignore them, place a proper order
+      case 'generate': {
+        const { csr, dcv_method, approver_email, product_id, period, contact } = body
         if (!csr) return res.status(400).json({ error: 'CSR required' })
         if (!dcv_method) return res.status(400).json({ error: 'DCV method required' })
         if (!product_id) return res.status(400).json({ error: 'product_id required' })
@@ -90,11 +67,10 @@ export default async function handler(req, res) {
           product_id: String(product_id),
           csr,
           server_count: '1',
-          period: '12',
+          period: String(period || 12),
           webserver_type: '2',
           dcv_method,
           signature_hash: 'SHA2',
-          // Admin contact
           admin_firstname: c.first_name || 'Admin',
           admin_lastname: c.last_name || 'User',
           admin_phone: c.phone || '',
@@ -103,7 +79,6 @@ export default async function handler(req, res) {
           admin_city: c.city || '',
           admin_country: c.country || 'IN',
           admin_addressline1: c.address || '',
-          // Tech contact (same as admin for DV)
           tech_firstname: c.first_name || 'Admin',
           tech_lastname: c.last_name || 'User',
           tech_phone: c.phone || '',
@@ -124,11 +99,11 @@ export default async function handler(req, res) {
         break
       }
 
-      // Reissue an already-issued cert (different from completing incomplete)
+      // Reissue an ALREADY-ISSUED cert with new CSR
       case 'reissue': {
-        const { csr, dcv_method, approver_email, webserver_type } = body
+        const { csr, dcv_method, approver_email } = body
         if (!csr) return res.status(400).json({ error: 'CSR required' })
-        const params = new URLSearchParams({ auth_key: key, order_id, csr, webserver_type: webserver_type || '2', signature_hash: 'SHA2' })
+        const params = new URLSearchParams({ auth_key: key, order_id, csr, webserver_type: '2', signature_hash: 'SHA2' })
         if (dcv_method) params.set('dcv_method', dcv_method)
         if (approver_email) params.set('approver_email', approver_email)
         r = await fetch(`${V1}/orders/ssl/reissue/${order_id}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params })
@@ -136,29 +111,20 @@ export default async function handler(req, res) {
         break
       }
 
-      // Change DCV method on a processing order
       case 'change_dcv': {
         const { domain, new_method, approver_email } = body
-        if (!domain) return res.status(400).json({ error: 'domain required' })
-        if (!new_method) return res.status(400).json({ error: 'new_method required' })
-        const params = new URLSearchParams({ auth_key: key, order_id, domain_name: domain, new_method })
+        const params = new URLSearchParams({ auth_key: key, order_id, domain_name: domain || '', new_method: new_method || 'dns' })
         if (new_method === 'email' && approver_email) params.set('approver_email', approver_email)
-        r = await fetch(`${V1}/orders/ssl/change_dcv/${order_id}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: params
-        })
+        r = await fetch(`${V1}/orders/ssl/change_dcv/${order_id}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params })
         result = await r.json()
         break
       }
 
-      // Trigger DCV recheck — CA re-checks the validation and issues cert if valid
       case 'revalidate': {
-        const { domain } = body
         r = await fetch(`${V1}/orders/ssl/revalidate/${order_id}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ auth_key: key, order_id, ...(domain ? { domain } : {}) })
+          body: new URLSearchParams({ auth_key: key, order_id, ...(body.domain ? { domain: body.domain } : {}) })
         })
         result = await r.json()
         break
@@ -176,22 +142,18 @@ export default async function handler(req, res) {
           body: new URLSearchParams({ auth_key: key, order_id, reason: body.reason || 'end' })
         })
         result = await r.json()
-
-        // GoGetSSL returns success:true even for already-cancelled orders
-        // Treat "already cancelled" as success, not an error
+        // Treat already-cancelled as success
         if (result.error && result.message?.toLowerCase().includes('already in cancelled')) {
-          result = { success: true, message: 'Order is already cancelled in GoGetSSL.' }
+          result = { success: true, message: 'Already cancelled in GoGetSSL' }
         }
-
-        // Sync the cancelled status back to Supabase regardless
+        // Update DB status
         if (result.success === true || result.success === 'true') {
-          const { createClient } = await import('@supabase/supabase-js')
-          const sb = createClient(
-            process.env.SUPABASE_URL || 'https://cbfwizrivaaqibykulis.supabase.co',
-            process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_rTbE5qvU7nDlDevl-WviAg_LSWim1hb'
-          )
-          await sb.from('orders').update({ status: 'cancelled', updated_at: new Date().toISOString() })
-            .eq('gogetssl_order_id', Number(order_id))
+          try {
+            const { createClient } = await import('@supabase/supabase-js')
+            const sb = createClient(process.env.SUPABASE_URL || 'https://cbfwizrivaaqibykulis.supabase.co',
+              process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_rTbE5qvU7nDlDevl-WviAg_LSWim1hb')
+            await sb.from('orders').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('gogetssl_order_id', Number(order_id))
+          } catch(e) {}
         }
         break
       }
@@ -200,6 +162,18 @@ export default async function handler(req, res) {
         r = await fetch(`${V1}/orders/ssl/recheck-caa/${order_id}?auth_key=${key}`)
         result = await r.json()
         break
+
+      case 'domain_emails': {
+        const domain = (body.domain || '').replace(/^\*\./, '')
+        const std = ['admin','administrator','postmaster','hostmaster','webmaster'].map(p=>`${p}@${domain}`)
+        try {
+          const r1 = await fetch(`${V1}/tools/domain/emails`, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: new URLSearchParams({auth_key:key, domain}) })
+          const d1 = await r1.json()
+          const api = [...(d1.ComodoApprovalEmails||[]), ...(d1.GeotrustApprovalEmails||[])]
+          result = { emails: [...new Set([...std, ...api])], standard: std }
+        } catch { result = { emails: std, standard: std } }
+        break
+      }
 
       default:
         return res.status(400).json({ error: `Unknown action: ${action}` })

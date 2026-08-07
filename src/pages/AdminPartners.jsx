@@ -27,20 +27,25 @@ export default function AdminPartners() {
   async function createPartner(e) {
     e.preventDefault()
     setSaving(true); setMsg(null)
-    const { data: authData, error: authErr } = await supabase.auth.admin
-      ? await supabase.auth.signUp({ email: form.email, password: form.password, options: { data: { full_name: form.full_name } } })
-      : { data: null, error: { message: 'Need service role key for user creation' } }
-
-    if (authErr) { setMsg({ type: 'error', text: authErr.message }); setSaving(false); return }
-
-    // Profile is created by trigger; update role and company
-    if (authData?.user) {
-      await supabase.from('profiles').update({ role: 'partner', company: form.company, full_name: form.full_name }).eq('id', authData.user.id)
+    try {
+      const res = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: form.email, password: form.password, full_name: form.full_name, company: form.company, role: 'partner' })
+      })
+      const data = await res.json()
+      if (data.error) {
+        setMsg({ type: 'error', text: data.error })
+      } else {
+        setMsg({ type: 'success', text: `✓ Partner login created for ${form.email}` })
+        setForm({ full_name: '', email: '', company: '', password: '' })
+        setShowModal(false)
+        loadPartners()
+      }
+    } catch(err) {
+      setMsg({ type: 'error', text: err.message })
     }
-    setMsg({ type: 'success', text: `Partner login created for ${form.email}` })
-    setForm({ full_name: '', email: '', company: '', password: '' })
     setSaving(false)
-    loadPartners()
   }
 
   async function toggleRole(p) {

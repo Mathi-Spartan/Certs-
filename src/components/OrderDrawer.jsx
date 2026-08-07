@@ -113,6 +113,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
   // Step 3: DCV
   const [dcvMethod, setDcvMethod] = useState('dns')
   const [approverEmail, setApproverEmail] = useState('')
+  const [period, setPeriod] = useState(12)
   // Result
   const [showDcvChange, setShowDcvChange] = useState(false)
   const [newDcvMethod, setNewDcvMethod] = useState('')
@@ -166,17 +167,17 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
     setGenerating(true); setActionMsg(null)
     const domain = csrInfo?.cn || ld?.domain || ''
     const pid = ld?.product_id || order?.api_response?.product_id
-    const isIncomplete = ld?.status === 'incomplete'
+    const validityPeriod = ld?.validity_period || period || 12
 
     try {
       const payload = {
-        action: isIncomplete ? 'complete_order' : 'reissue',
+        action: 'generate',
         order_id: order.gogetssl_order_id,
         product_id: pid,
+        period: validityPeriod,
         csr,
         dcv_method: dcvMethod,
         domain,
-        webserver_type: '2',
         contact,
         ...(dcvMethod === 'email' && approverEmail ? { approver_email: approverEmail } : {})
       }
@@ -212,11 +213,8 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
       setDcvResult({ dcv_method: responseDcv, approver_method: finalAM, domain: responseDomain })
       if (r.order_id) setNewOrderId(r.order_id)
       setShowGen(false); setStep(1)
-      setActionMsg({ type:'success', text: isIncomplete
-        ? `✓ Certificate generated! New order #${r.order_id} is processing. Follow the ${responseDcv.toUpperCase()} validation instructions below.`
-        : '✓ Reissue submitted. Follow the validation instructions below.' })
+      setActionMsg({ type:'success', text:`✓ Certificate order placed! New order #${r.order_id} is now active. Follow the ${responseDcv.toUpperCase()} validation instructions below.` })
       onRefresh?.()
-      // Don't reload the old incomplete order — keep showing DCV instructions
     } catch(e) { setActionMsg({ type:'error', text: e.message }) }
     setGenerating(false)
   }
@@ -286,30 +284,20 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
           )}
 
           {/* Incomplete warning — redirect to portal, no new order */}
-          {!loading&&ld&&isIncomplete&&!showGen&&(
+          {!loading&&ld&&isIncomplete&&!showGen&&!dcvResult&&(
             <div style={{background:'#fffbeb',border:'1px solid #f59e0b',borderRadius:10,padding:'16px 18px',marginBottom:18}}>
               <div style={{display:'flex',gap:14,alignItems:'flex-start',marginBottom:12}}>
                 <div style={{fontSize:24,flexShrink:0}}>⚠️</div>
-                <div>
-                  <div style={{fontWeight:700,color:'#92400e',marginBottom:4,fontSize:14}}>CSR submission required</div>
-                  <p style={{fontSize:13,color:'#78350f'}}>
-                    This order is awaiting a CSR. GoGetSSL's public API does not support submitting a CSR to an incomplete order — this must be done through the GoGetSSL partner portal.
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,color:'#92400e',marginBottom:6,fontSize:14}}>Certificate not yet generated</div>
+                  <p style={{fontSize:13,color:'#78350f',marginBottom:4}}>
+                    This is an empty order shell — no CSR submitted yet. Click <strong>Generate Certificate</strong> to submit your CSR, choose domain validation, and place the actual certificate.
                   </p>
                 </div>
               </div>
-              <div style={{background:'rgba(255,255,255,.6)',borderRadius:8,padding:'12px 14px',marginBottom:12,fontSize:13,color:'#92400e'}}>
-                <strong>Steps in GoGetSSL portal:</strong>
-                <ol style={{marginTop:6,paddingLeft:20,display:'flex',flexDirection:'column',gap:4}}>
-                  <li>Click "Open in GoGetSSL ↗" above</li>
-                  <li>Click <strong>"Generate Certificate"</strong> on the order page</li>
-                  <li>Paste your CSR and choose DNS / HTTP / Email validation</li>
-                  <li>Come back here and click <strong>"Sync from GoGetSSL"</strong> to see the updated order with DCV values</li>
-                </ol>
-              </div>
-              <a href={`https://my.gogetssl.com/en/certificates/${order?.gogetssl_order_id}`} target="_blank" rel="noreferrer"
-                className="btn btn-primary btn-sm" style={{background:'#d97706',borderColor:'#d97706'}}>
-                Open order in GoGetSSL portal to submit CSR ↗
-              </a>
+              <button className="btn btn-primary btn-sm" onClick={()=>setShowGen(true)} style={{background:'#d97706'}}>
+                ⚙ Generate Certificate
+              </button>
             </div>
           )}
 
@@ -343,7 +331,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
           {showGen&&(
             <div style={{border:'2px solid var(--blue-accent)',borderRadius:12,padding:20,marginBottom:18}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-                <h3 style={{fontSize:15}}>{isIncomplete?'Generate Certificate':'Reissue Certificate'}</h3>
+                <h3 style={{fontSize:15}}>isIncomplete ? 'Generate Certificate (new order)' : 'Reissue Certificate'</h3>
                 <button onClick={()=>{setShowGen(false);setStep(1);setCsrInfo(null)}} style={{opacity:.5,fontSize:18}}>×</button>
               </div>
 
@@ -642,7 +630,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
               <div style={{borderTop:'1px solid var(--border)',paddingTop:14,marginBottom:16}}>
                 <div style={{fontSize:11,fontWeight:600,color:'var(--ink-muted)',letterSpacing:'.07em',marginBottom:10}}>ACTIONS</div>
                 <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                  {isIncomplete&&<a href={`https://my.gogetssl.com/en/certificates/${order?.gogetssl_order_id}`} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm" style={{background:'#d97706'}}>Submit CSR in GoGetSSL ↗</a>}
+                  {isIncomplete&&!showGen&&!dcvResult&&<button className="btn btn-primary btn-sm" onClick={()=>setShowGen(true)} style={{background:'#d97706'}}>⚙ Generate Certificate</button>}
                   {hasCert&&<>
                     <button className="btn btn-secondary btn-sm" onClick={()=>download(ld.crt_code,`cert_${ld.order_id}.crt`)}>↓ Certificate</button>
                     {hasCa&&<button className="btn btn-secondary btn-sm" onClick={()=>download(ld.ca_code,`ca_${ld.order_id}.crt`)}>↓ CA Bundle</button>}
