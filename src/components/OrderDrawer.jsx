@@ -1,16 +1,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { PRODUCT_MAP, resolveProductName, resolveCAName } from '../productMap'
 
 const SP = { active:'green', issued:'green', cancelled:'red', revoked:'red', expired:'red', pending:'amber', incomplete:'amber', processing:'blue' }
-const V1_NAMES = {31:'RapidSSL DV',32:'RapidSSL Wildcard',33:'GeoTrust DV',34:'GeoTrust OV Wildcard',35:'GeoTrust EV',36:'GeoTrust OV',50:'Thawte SSL OV',51:'Thawte SSL EV',65:'DigiCert Secure Site OV',66:'DigiCert Secure Site EV',67:'DigiCert Secure Site Pro OV',68:'DigiCert Secure Site Pro EV',175:'DigiCert Basic EV',176:'DigiCert Basic OV'}
 
-export function resolveProduct(o) {
-  const r = o?.api_response
-  if (!r) return o?.product_name || '—'
-  if (r.product_name) return r.product_name
-  return V1_NAMES[r.product_id] || o?.product_name || (r.product_id ? `Product #${r.product_id}` : '—')
-}
-export function resolveCA(o) { return o?.api_response?.ca_name || o?.ca || 'GoGetSSL' }
+export function resolveProduct(o) { return resolveProductName(o) }
+export function resolveCA(o) { return resolveCAName(o) }
 
 function CopyBox({ label, value }) {
   const [copied, setCopied] = useState(false)
@@ -628,7 +623,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
                   ['Status',ld.status||'—',false],
                   ['DCV Status',ld.dcv_status===2?'✓ Verified':ld.dcv_status===1?'Pending':'Not set',false],
                   ['Domain',ld.domain||'—',true],
-                  ['Product',V1_NAMES[ld.product_id]||`#${ld.product_id}`||'—',false],
+                  ['Product',PRODUCT_MAP[ld.product_id]||`#${ld.product_id}`||'—',false],
                   ['Valid from',ld.valid_from&&ld.valid_from!=='0000-00-00'?ld.valid_from:'—',false],
                   ['Valid till',ld.valid_till&&ld.valid_till!=='0000-00-00'?ld.valid_till:'—',false],
                   ['DCV method',ld.dcv_method||'—',false],

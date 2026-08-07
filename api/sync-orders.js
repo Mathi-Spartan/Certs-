@@ -4,6 +4,9 @@ const GGS_V2 = { Authorization: `GGS ${process.env.GOGETSSL_PARTNER_CODE}:${proc
 const V1 = 'https://my.gogetssl.com/api'
 const V2 = 'https://my.gogetssl.com/api/v2/certificates'
 
+// Complete GoGetSSL product catalog (all 78 products)
+const PRODUCT_MAP = {"12":"GeoTrust QuickSSL Premium SAN","24":"Thawte SSL Web Server Multi-Domain Wildcard","25":"GeoTrust TrueBusinessID SAN Wildcard","26":"GeoTrust QuickSSL Premium","27":"GeoTrust TrueBusinessID","28":"GeoTrust TrueBusinessID Wildcard","29":"GeoTrust TrueBusinessID EV","30":"GeoTrust TrueBusinessID SAN","31":"RapidSSL Standard","32":"RapidSSL WildcardSSL","35":"Thawte Web Server SSL","36":"Thawte SSL 123","37":"Thawte Web Server EV","38":"Thawte Wildcard SSL Certificate","39":"DigiCert Code Signing SSL","41":"DigiCert Secure Site","42":"DigiCert Secure Site PRO","43":"DigiCert Secure Site PRO EV","44":"DigiCert Secure Site EV","45":"Sectigo PositiveSSL","46":"Sectigo PositiveSSL Wildcard","47":"Sectigo InstantSSL","48":"Sectigo InstantSSL Pro","49":"Sectigo InstantSSL Premium","50":"Sectigo InstantSSL Premium Wildcard","53":"Sectigo SSL UCC OV","54":"Sectigo Multi-Domain SSL","55":"Sectigo EV SSL","57":"Sectigo Multi-Domain EV SSL","63":"Sectigo PositiveSSL Multi-Domain Wildcard (3 SAN)","65":"GoGetSSL 90-day Trial SSL","66":"GoGetSSL Domain SSL","67":"GoGetSSL Wildcard SSL","68":"GoGetSSL Multi-Domain SSL","71":"GeoTrust TrueBusinessID EV SAN","75":"Sectigo Essential SSL","76":"Sectigo Essential Wildcard SSL","77":"Sectigo PositiveSSL Multi-Domain","82":"Sectigo SSL Certificate","84":"DigiCert Secure Site Wildcard","85":"Sectigo SSL UCC DV","86":"Sectigo Intel vPro AMT","89":"DigiCert EV Code Signing Certificate","99":"Sectigo PositiveSSL Multi-Domain Wildcard","100":"Sectigo Multi-Domain Wildcard SSL","105":"Sectigo SSL Wildcard","111":"Thawte SSL 123 Wildcard","112":"GeoTrust QuickSSL Premium Wildcard","113":"DigiCert Secure Site PRO Wildcard","118":"Sectigo PositiveSSL EV","119":"Sectigo PositiveSSL EV MDC","120":"Sectigo UCC DV Wildcard SSL","125":"Sectigo EnterpriseSSL","126":"Sectigo EnterpriseSSL Pro","127":"Sectigo EnterpriseSSL Pro Wildcard","128":"Sectigo UCC OV Wildcard SSL","129":"Sectigo EnterpriseSSL Pro EV","130":"Sectigo EnterpriseSSL Pro EV MDC","131":"Sectigo EV Code Signing SSL","132":"GoGetSSL BusinessTrust EV","133":"GoGetSSL BusinessTrust EV SAN","134":"GoGetSSL BusinessTrust","135":"GoGetSSL BusinessTrust Wildcard","136":"GoGetSSL BusinessTrust SAN","138":"GoGetSSL EV Code Signing","139":"GoGetSSL Multi-Domain Wildcard SSL","144":"GoGetSSL Public IP SAN","173":"DigiCert Basic OV","174":"DigiCert Wildcard SSL","175":"DigiCert Basic EV SSL","180":"DigiCert Multi-Domain SSL","182":"DigiCert EV Multi-Domain","185":"GoGetSSL Secure Domain SSL","300":"Sectigo ACME Certificate-as-a-Service","400":"RapidSSL Plan + Automate","401":"RapidSSL Wildcard Plan + Automate","402":"GeoTrust DV Plan + Automate","403":"GeoTrust DV Wildcard Plan + Automate"}
+
 const V2_PRODUCT_NAMES = {
   300:'Sectigo ACME CaaS', 400:'RapidSSL DV + Automate',
   401:'RapidSSL Wildcard + Automate', 402:'GeoTrust DV + Automate',
@@ -12,27 +15,14 @@ const V2_PRODUCT_NAMES = {
 const V2_CA = { 300:'Sectigo', 400:'RapidSSL', 401:'RapidSSL', 402:'GeoTrust', 403:'GeoTrust' }
 
 // Product ID → name from GoGetSSL catalog
-const V1_PRODUCT_MAP = {
-  31:'RapidSSL DV', 32:'RapidSSL Wildcard DV', 33:'GeoTrust DV',
-  34:'GeoTrust OV Wildcard', 35:'GeoTrust EV', 36:'GeoTrust OV',
-  50:'Thawte SSL Web Server OV', 51:'Thawte SSL Web Server EV',
-  65:'DigiCert Secure Site OV', 66:'DigiCert Secure Site EV',
-  67:'DigiCert Secure Site Pro OV', 68:'DigiCert Secure Site Pro EV',
-  175:'DigiCert Basic EV SSL', 176:'DigiCert Basic OV SSL',
-}
 
 function detectCA(productId, productName) {
   const n = (productName || '').toLowerCase()
-  if (n.includes('digicert') || n.includes('secure site')) return 'DigiCert'
+  if (n.includes('digicert')) return 'DigiCert'
   if (n.includes('thawte')) return 'Thawte'
   if (n.includes('geotrust')) return 'GeoTrust'
   if (n.includes('rapidssl')) return 'RapidSSL'
-  if (n.includes('sectigo') || n.includes('comodo') || n.includes('positive')) return 'Sectigo'
-  const id = Number(productId)
-  if ([65,66,67,68,175,176].includes(id)) return 'DigiCert'
-  if ([50,51].includes(id)) return 'Thawte'
-  if ([33,34,35,36].includes(id)) return 'GeoTrust'
-  if ([31,32].includes(id)) return 'RapidSSL'
+  if (n.includes('sectigo') || n.includes('comodo') || n.includes('positive') || n.includes('gogetssl')) return 'Sectigo/GoGetSSL'
   return 'GoGetSSL'
 }
 
@@ -100,7 +90,7 @@ export default async function handler(req, res) {
 
         for (const d of details) {
           const pid = d.product_id
-          const pname = V1_PRODUCT_MAP[pid] || d.product_name || (pid ? `Product #${pid}` : 'SSL Certificate')
+          const pname = PRODUCT_MAP[String(pid)] || d.product_name || (pid ? `Product #${pid}` : 'SSL Certificate')
           // Handle invalid dates from GoGetSSL
           const validTill = d.valid_till && d.valid_till !== '0000-00-00' ? d.valid_till : (d.end_date || null)
           const validFrom = d.valid_from && d.valid_from !== '0000-00-00' ? d.valid_from : (d.begin_date || null)

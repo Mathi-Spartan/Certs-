@@ -1,3 +1,4 @@
+import { resolveProductName, resolveCAName } from '../productMap'
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import DashShell from '../components/DashShell'
@@ -89,7 +90,7 @@ export default function AdminDash() {
       list = list.filter(o =>
         String(o.gogetssl_order_id).includes(q) ||
         o.domain?.toLowerCase().includes(q) ||
-        resolveProduct(o).toLowerCase().includes(q) ||
+        resolveProductName(o).toLowerCase().includes(q) ||
         o.status?.toLowerCase().includes(q)
       )
     }
@@ -245,12 +246,12 @@ export default function AdminDash() {
                         </span>
                       </td>
                       <td style={{padding:'10px 16px',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                        {resolveProduct(o)}
+                        {resolveProductName(o)}
                       </td>
                       <td style={{padding:'10px 16px'}}>
                         <span style={{fontFamily:'monospace',fontSize:12}}>{o.domain||'—'}</span>
                       </td>
-                      <td style={{padding:'10px 16px',fontSize:12,color:'var(--ink-muted)'}}>{resolveCA(o)}</td>
+                      <td style={{padding:'10px 16px',fontSize:12,color:'var(--ink-muted)'}}>{resolveCAName(o)}</td>
                       <td style={{padding:'10px 16px'}}>
                         <span className={`pill pill-${SP[o.status]||'gray'}`} style={{fontSize:11}}>{o.status}</span>
                         {isExpiring && <span style={{marginLeft:4,fontSize:10,color:'#ea580c',fontWeight:600}}>{days}d</span>}
