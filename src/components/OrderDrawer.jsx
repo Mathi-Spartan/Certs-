@@ -269,7 +269,6 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
             </div>
             <div style={{fontSize:12,color:'var(--ink-muted)',marginTop:2}}>{resolveProduct(order)} · {resolveCA(order)}</div>
           </div>
-          <a href={`https://my.gogetssl.com/en/certificates/${order?.gogetssl_order_id}`} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm" style={{fontSize:11,whiteSpace:'nowrap'}}>Open in GoGetSSL ↗</a>
           <button onClick={onClose} style={{fontSize:24,color:'var(--ink-muted)',lineHeight:1,padding:'0 4px'}}>×</button>
         </div>
 
