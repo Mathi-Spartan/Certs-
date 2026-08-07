@@ -285,31 +285,27 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
             </div>
           )}
 
-          {/* Incomplete warning — redirect to portal, no new order */}
-          {!loading&&ld&&isIncomplete&&!showGen&&!dcvResult&&(
-            <div style={{background:'#fffbeb',border:'1px solid #f59e0b',borderRadius:10,padding:'16px 18px',marginBottom:18}}>
-              <div style={{display:'flex',gap:14,alignItems:'flex-start',marginBottom:14}}>
-                <div style={{fontSize:22,flexShrink:0}}>⚠️</div>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:700,color:'#92400e',marginBottom:6,fontSize:14}}>No CSR submitted yet</div>
-                  <p style={{fontSize:13,color:'#78350f',lineHeight:1.5}}>
-                    GoGetSSL's API requires the CSR to be submitted when placing the order. This incomplete order shell was placed without one. To issue a certificate for your domain:
-                  </p>
-                  <ol style={{fontSize:13,color:'#78350f',marginTop:8,paddingLeft:20,lineHeight:1.8}}>
-                    <li>Click <strong>Generate Certificate</strong> — this places a new order with your CSR included</li>
-                    <li>Choose your domain validation method (DNS / HTTP / Email)</li>
-                    <li>Complete validation — certificate is issued automatically</li>
-                  </ol>
-                  <p style={{fontSize:11,color:'#b45309',marginTop:8}}>The incomplete order #{order?.gogetssl_order_id} can be cancelled separately.</p>
-                </div>
+          {/* Incomplete — submit CSR via GoGetSSL portal */}
+          {!loading&&ld&&isIncomplete&&!dcvResult&&(
+            <div style={{background:'#fffbeb',border:'1px solid #f59e0b',borderRadius:10,padding:'18px 20px',marginBottom:18}}>
+              <div style={{fontWeight:700,color:'#92400e',marginBottom:8,fontSize:14}}>⚙ Submit CSR to generate this certificate</div>
+              <p style={{fontSize:13,color:'#78350f',marginBottom:14,lineHeight:1.6}}>
+                This order is waiting for CSR submission. Complete it in the GoGetSSL portal — the partner API does not support CSR submission on existing orders.
+              </p>
+              <div style={{background:'rgba(255,255,255,.7)',borderRadius:8,padding:'12px 16px',marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#92400e',marginBottom:8,letterSpacing:'.05em'}}>HOW TO GENERATE THIS CERTIFICATE</div>
+                <ol style={{fontSize:13,color:'#78350f',paddingLeft:18,lineHeight:2,margin:0}}>
+                  <li>Click <strong>"Open in GoGetSSL portal ↗"</strong> below</li>
+                  <li>Click <strong>"Generate Certificate"</strong> on the order page</li>
+                  <li>Paste your CSR, enter contact details, choose validation method</li>
+                  <li>Submit — order moves to <em>processing</em> with DCV instructions</li>
+                  <li>Return here → click <strong>Sync</strong> to see updated status and DCV values</li>
+                </ol>
               </div>
-              <div style={{display:'flex',gap:8}}>
-                <button className="btn btn-primary btn-sm" onClick={()=>{setGenMode('new');setShowGen(true)}} style={{background:'#d97706'}}>
-                  ⚙ Generate Certificate
-                </button>
-                <a href={`https://my.gogetssl.com/en/certificates/${order?.gogetssl_order_id}`} target="_blank" rel="noreferrer"
-                  className="btn btn-secondary btn-sm" style={{fontSize:12}}>Open in GoGetSSL ↗</a>
-              </div>
+              <a href={`https://my.gogetssl.com/en/certificates/${order?.gogetssl_order_id}`} target="_blank" rel="noreferrer"
+                className="btn btn-primary btn-sm" style={{background:'#d97706'}}>
+                Open in GoGetSSL portal ↗
+              </a>
             </div>
           )}
 
