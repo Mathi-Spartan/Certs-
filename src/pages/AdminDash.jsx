@@ -1,44 +1,46 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import DashShell from '../components/DashShell'
+import OrderDrawer, { resolveProduct, resolveCA } from '../components/OrderDrawer'
 import { supabase } from '../supabase'
 
-const V1_NAMES = {31:'RapidSSL DV',32:'RapidSSL Wildcard',33:'GeoTrust DV',34:'GeoTrust OV Wildcard',35:'GeoTrust EV',36:'GeoTrust OV',50:'Thawte SSL OV',51:'Thawte SSL EV',65:'DigiCert Secure Site OV',66:'DigiCert Secure Site EV',67:'DigiCert Secure Site Pro OV',68:'DigiCert Secure Site Pro EV',175:'DigiCert Basic EV',176:'DigiCert Basic OV'}
-function resolveProduct(o) {
-  const r = o?.api_response
-  if (!r) return o?.product_name || '—'
-  if (r.product_name) return r.product_name
-  return V1_NAMES[r.product_id] || o?.product_name || (r.product_id ? `Product #${r.product_id}` : '—')
-}
+const SP = { active:'green', issued:'green', cancelled:'red', revoked:'red', expired:'gray', pending:'amber', incomplete:'amber', processing:'blue' }
 
-const STATUS_META = {
-  active:      { label:'Active / Issued',       color:'#16a34a', bg:'#f0fdf4', icon:'✓' },
-  pending:     { label:'Pending validation',     color:'#3375b1', bg:'#eef5fc', icon:'⏳' },
-  incomplete:  { label:'Incomplete',             color:'#d97706', bg:'#fffbeb', icon:'!' },
-  expiring:    { label:'Expiring within 30 days',color:'#ea580c', bg:'#fff7ed', icon:'⏰' },
-  cancelled:   { label:'Cancelled / Revoked',    color:'#dc2626', bg:'#fef2f2', icon:'✕' },
-  expired:     { label:'Expired',                color:'#9ca3af', bg:'#f9fafb', icon:'—' },
-  automation:  { label:'Automation orders',      color:'#7c3aed', bg:'#f5f3ff', icon:'⚡' },
-  unassigned:  { label:'Unassigned to partner',  color:'#b45309', bg:'#fffbeb', icon:'?' },
-}
+const FILTERS = [
+  { key:'all',        label:'All orders',         color:'#3375b1' },
+  { key:'active',     label:'Active / Issued',    color:'#16a34a' },
+  { key:'pending',    label:'Pending',            color:'#2563eb' },
+  { key:'incomplete', label:'Incomplete',         color:'#d97706' },
+  { key:'expiring',   label:'Expiring soon',      color:'#ea580c' },
+  { key:'cancelled',  label:'Cancelled',          color:'#dc2626' },
+  { key:'expired',    label:'Expired',            color:'#9ca3af' },
+  { key:'automation', label:'Automation',         color:'#7c3aed' },
+  { key:'unassigned', label:'Unassigned',         color:'#b45309' },
+]
 
 export default function AdminDash() {
-  const nav = useNavigate()
   const [orders, setOrders] = useState([])
+  const [partners, setPartners] = useState([])
   const [partnerCount, setPartnerCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [activeFilter, setActiveFilter] = useState('all')
+  const [search, setSearch] = useState('')
+  const [drawer, setDrawer] = useState(null)
+  const [sortDir, setSortDir] = useState('desc')
 
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
     setLoading(true)
-    const [{ data: ord }, { count: pCount }] = await Promise.all([
+    const [{ data: ord }, { data: par }, { count: pCount }] = await Promise.all([
       supabase.from('orders')
-        .select('id,gogetssl_order_id,product_name,ca,domain,status,is_automation,next_renewal,assigned_to,api_response')
+        .select('*, partner:profiles!orders_assigned_to_fkey(full_name,email)')
         .order('gogetssl_order_id', { ascending: false }),
-      supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'partner'),
+      supabase.from('profiles').select('id,full_name,email,company').eq('role','partner').order('full_name'),
+      supabase.from('profiles').select('*', { count:'exact', head:true }).eq('role','partner'),
     ])
     setOrders(ord || [])
+    setPartners(par || [])
     setPartnerCount(pCount || 0)
     setLoading(false)
   }
@@ -46,221 +48,246 @@ export default function AdminDash() {
   const total = orders.length
   const now = new Date()
 
-  const counts = {
-    active:     orders.filter(o => ['active','issued'].includes(o.status)).length,
-    pending:    orders.filter(o => ['pending','processing'].includes(o.status)).length,
-    incomplete: orders.filter(o => o.status === 'incomplete').length,
-    expiring:   orders.filter(o => {
+  function getCount(key) {
+    if (key === 'all') return total
+    if (key === 'active') return orders.filter(o => ['active','issued'].includes(o.status)).length
+    if (key === 'pending') return orders.filter(o => ['pending','processing'].includes(o.status)).length
+    if (key === 'incomplete') return orders.filter(o => o.status === 'incomplete').length
+    if (key === 'expiring') return orders.filter(o => {
       if (!o.next_renewal || o.next_renewal === '0000-00-00') return false
       const d = (new Date(o.next_renewal) - now) / 86400000
       return d > 0 && d <= 30 && ['active','issued'].includes(o.status)
-    }).length,
-    cancelled:  orders.filter(o => ['cancelled','revoked'].includes(o.status)).length,
-    expired:    orders.filter(o => o.status === 'expired').length,
-    automation: orders.filter(o => o.is_automation).length,
-    unassigned: orders.filter(o => !o.assigned_to).length,
+    }).length
+    if (key === 'cancelled') return orders.filter(o => ['cancelled','revoked'].includes(o.status)).length
+    if (key === 'expired') return orders.filter(o => o.status === 'expired').length
+    if (key === 'automation') return orders.filter(o => o.is_automation).length
+    if (key === 'unassigned') return orders.filter(o => !o.assigned_to).length
+    return 0
   }
 
-  const expiringSoon = orders.filter(o => {
-    if (!o.next_renewal || o.next_renewal === '0000-00-00') return false
-    const d = (new Date(o.next_renewal) - now) / 86400000
-    return d > 0 && d <= 30 && ['active','issued'].includes(o.status)
-  }).sort((a,b) => new Date(a.next_renewal) - new Date(b.next_renewal)).slice(0,6)
+  function applyFilter(list, key) {
+    if (key === 'all') return list
+    if (key === 'active') return list.filter(o => ['active','issued'].includes(o.status))
+    if (key === 'pending') return list.filter(o => ['pending','processing'].includes(o.status))
+    if (key === 'incomplete') return list.filter(o => o.status === 'incomplete')
+    if (key === 'expiring') return list.filter(o => {
+      if (!o.next_renewal || o.next_renewal === '0000-00-00') return false
+      const d = (new Date(o.next_renewal) - now) / 86400000
+      return d > 0 && d <= 30 && ['active','issued'].includes(o.status)
+    })
+    if (key === 'cancelled') return list.filter(o => ['cancelled','revoked'].includes(o.status))
+    if (key === 'expired') return list.filter(o => o.status === 'expired')
+    if (key === 'automation') return list.filter(o => o.is_automation)
+    if (key === 'unassigned') return list.filter(o => !o.assigned_to)
+    return list
+  }
 
-  const recentOrders = orders
-    .filter(o => !['cancelled','revoked','expired'].includes(o.status))
-    .slice(0, 6)
+  const filtered = (() => {
+    let list = applyFilter(orders, activeFilter)
+    if (search) {
+      const q = search.toLowerCase()
+      list = list.filter(o =>
+        String(o.gogetssl_order_id).includes(q) ||
+        o.domain?.toLowerCase().includes(q) ||
+        resolveProduct(o).toLowerCase().includes(q) ||
+        o.status?.toLowerCase().includes(q)
+      )
+    }
+    list = [...list].sort((a,b) => {
+      const av = a.gogetssl_order_id||0, bv = b.gogetssl_order_id||0
+      return sortDir==='desc' ? bv-av : av-bv
+    })
+    return list
+  })()
 
-  if (loading) return (
-    <DashShell>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'60vh'}}>
-        <div className="spinner"/>
-      </div>
-    </DashShell>
-  )
+  const activeFilterMeta = FILTERS.find(f => f.key === activeFilter)
 
   return (
     <DashShell>
       <div className="dash-topbar">
         <div>
-          <div style={{fontWeight:700,fontSize:'1.05rem'}}>Master admin dashboard</div>
-          <div style={{fontSize:12,color:'var(--ink-muted)',marginTop:2}}>
-            {total} orders · {partnerCount} partners · {counts.automation} automation plans
+          <div style={{fontWeight:700,fontSize:'1.05rem'}}>Dashboard</div>
+          <div style={{fontSize:12,color:'var(--ink-muted)',marginTop:1}}>
+            {total} orders · {partnerCount} partners · {getCount('automation')} automation
           </div>
         </div>
-        <div style={{display:'flex',gap:10}}>
+        <div style={{display:'flex',gap:8}}>
           <Link to="/admin/partners" className="btn btn-secondary btn-sm">Partners</Link>
-          <Link to="/admin/orders" className="btn btn-primary btn-sm">All orders</Link>
+          <Link to="/admin/orders" className="btn btn-primary btn-sm">Full order view</Link>
         </div>
       </div>
 
       <div className="dash-content">
 
-        {/* Status grid — clean tiles */}
+        {/* Compact filter pills row */}
         <div style={{
-          display:'grid',
-          gridTemplateColumns:'repeat(4,1fr)',
-          gap:1,
-          background:'var(--border)',
+          display:'flex', gap:8, flexWrap:'wrap', marginBottom:20,
+          padding:'14px 16px',
+          background:'var(--white)',
+          borderRadius:10,
           border:'1px solid var(--border)',
-          borderRadius:12,
-          overflow:'hidden',
-          marginBottom:24,
           boxShadow:'var(--shadow-sm)'
         }}>
-          {Object.entries(counts).map(([key, count]) => {
-            const m = STATUS_META[key]
-            const isAlert = count > 0 && ['expiring','unassigned'].includes(key)
-            const isZero = count === 0
+          {FILTERS.map(f => {
+            const count = getCount(f.key)
+            const isActive = activeFilter === f.key
             return (
               <button
-                key={key}
-                onClick={() => nav(`/admin/orders?filter=${key}`)}
+                key={f.key}
+                onClick={() => { setActiveFilter(f.key); setSearch('') }}
                 style={{
-                  background: isZero ? 'var(--white)' : m.bg,
-                  border:'none',
-                  padding:'20px 22px',
-                  textAlign:'left',
-                  cursor:'pointer',
-                  transition:'filter .12s',
-                  display:'flex',
-                  flexDirection:'column',
-                  gap:8,
-                  position:'relative',
-                  outline:'none',
+                  display:'flex', alignItems:'center', gap:6,
+                  padding:'5px 12px',
+                  borderRadius:20,
+                  border: isActive ? `1.5px solid ${f.color}` : '1.5px solid var(--border)',
+                  background: isActive ? f.color : 'var(--white)',
+                  color: isActive ? '#fff' : count === 0 ? 'var(--ink-faint)' : 'var(--ink-mid)',
+                  fontSize:12, fontWeight: isActive ? 600 : 400,
+                  cursor:'pointer', transition:'all .12s',
+                  whiteSpace:'nowrap'
                 }}
-                onMouseEnter={e=>e.currentTarget.style.filter='brightness(.97)'}
-                onMouseLeave={e=>e.currentTarget.style.filter=''}
               >
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                  <span style={{fontSize:11,fontWeight:600,color: isZero ? 'var(--ink-muted)' : m.color, textTransform:'uppercase',letterSpacing:'.07em'}}>
-                    {m.label}
-                  </span>
-                  <span style={{fontSize:16, opacity: isZero ? .3 : .7}}>{m.icon}</span>
-                </div>
-                <div style={{
-                  fontSize:36,
-                  fontWeight:700,
-                  lineHeight:1,
-                  color: isZero ? 'var(--ink-faint)' : isAlert ? m.color : 'var(--ink)',
-                  letterSpacing:'-.02em'
-                }}>{count}</div>
-                {total > 0 && (
-                  <div style={{display:'flex',alignItems:'center',gap:6}}>
-                    <div style={{flex:1,height:3,background:'rgba(0,0,0,.06)',borderRadius:2}}>
-                      <div style={{width:`${Math.round((count/total)*100)}%`,height:'100%',background: isZero ? 'transparent' : m.color,borderRadius:2,transition:'width .5s ease'}}/>
-                    </div>
-                    <span style={{fontSize:10,color:'var(--ink-muted)',whiteSpace:'nowrap'}}>{Math.round((count/total)*100)}%</span>
-                  </div>
-                )}
+                <span>{f.label}</span>
+                <span style={{
+                  background: isActive ? 'rgba(255,255,255,.25)' : count === 0 ? 'var(--canvas)' : `${f.color}18`,
+                  color: isActive ? '#fff' : f.color,
+                  fontSize:11, fontWeight:700,
+                  padding:'1px 6px', borderRadius:10,
+                  minWidth:18, textAlign:'center'
+                }}>{count}</span>
               </button>
             )
           })}
+
+          {/* Search inline */}
+          <div style={{marginLeft:'auto',display:'flex',alignItems:'center'}}>
+            <input
+              className="form-input"
+              placeholder="Search…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{width:200,fontSize:12,padding:'5px 10px',height:32}}
+            />
+          </div>
         </div>
 
-        {/* Bottom two panels */}
-        <div style={{display:'grid',gridTemplateColumns: expiringSoon.length > 0 ? '1fr 340px' : '1fr',gap:20}}>
-
-          {/* Recent orders */}
-          <div className="card" style={{padding:0,overflow:'hidden'}}>
-            <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-              <div>
-                <div style={{fontWeight:600,fontSize:14}}>Recent orders</div>
-                <div style={{fontSize:12,color:'var(--ink-muted)',marginTop:2}}>Active, pending and incomplete orders</div>
-              </div>
-              <Link to="/admin/orders" style={{fontSize:12,color:'var(--blue-accent)',fontWeight:500}}>View all →</Link>
+        {/* Results table */}
+        <div className="card" style={{padding:0,overflow:'hidden'}}>
+          <div style={{
+            padding:'12px 20px',
+            borderBottom:'1px solid var(--border)',
+            display:'flex', alignItems:'center', justifyContent:'space-between',
+            background:'var(--canvas)'
+          }}>
+            <div style={{fontSize:13,fontWeight:600}}>
+              <span style={{color: activeFilterMeta?.color}}>{activeFilterMeta?.label}</span>
+              <span style={{color:'var(--ink-muted)',fontWeight:400,marginLeft:6}}>{filtered.length} {filtered.length === 1 ? 'order' : 'orders'}</span>
             </div>
-
-            {recentOrders.length === 0 ? (
-              <div style={{padding:'40px 20px',textAlign:'center'}}>
-                <div style={{fontSize:32,marginBottom:10}}>📋</div>
-                <div style={{fontWeight:500,fontSize:14,marginBottom:6}}>No active orders</div>
-                <div style={{fontSize:13,color:'var(--ink-muted)',marginBottom:16}}>Sync from GoGetSSL to pull your latest orders.</div>
-                <Link to="/admin/orders" className="btn btn-primary btn-sm">Go to orders & sync</Link>
-              </div>
-            ) : (
-              <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-                <thead>
-                  <tr style={{background:'var(--canvas)'}}>
-                    {['Order ID','Product','Domain','Status','Valid till'].map(h=>(
-                      <th key={h} style={{textAlign:'left',fontSize:11,fontWeight:600,color:'var(--ink-muted)',padding:'8px 20px',borderBottom:'1px solid var(--border)',letterSpacing:'.05em',textTransform:'uppercase'}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentOrders.map((o,i) => {
-                    const sp = {active:'green',issued:'green',pending:'amber',processing:'blue',incomplete:'amber'}
-                    return (
-                      <tr key={o.id} style={{borderBottom: i < recentOrders.length-1 ? '1px solid var(--border)' : 'none'}}
-                        onMouseEnter={e=>e.currentTarget.style.background='var(--blue-sky)'}
-                        onMouseLeave={e=>e.currentTarget.style.background=''}>
-                        <td style={{padding:'11px 20px'}}>
-                          <Link to="/admin/orders" style={{fontFamily:'monospace',fontWeight:700,color:'var(--blue-accent)',fontSize:13}}>
-                            #{o.gogetssl_order_id}
-                          </Link>
-                        </td>
-                        <td style={{padding:'11px 20px',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                          {resolveProduct(o)}
-                        </td>
-                        <td style={{padding:'11px 20px'}}>
-                          <span style={{fontFamily:'monospace',fontSize:12}}>{o.domain || '—'}</span>
-                        </td>
-                        <td style={{padding:'11px 20px'}}>
-                          <span className={`pill pill-${sp[o.status]||'gray'}`} style={{fontSize:11}}>{o.status}</span>
-                        </td>
-                        <td style={{padding:'11px 20px',color:'var(--ink-muted)',fontSize:12,whiteSpace:'nowrap'}}>
-                          {o.next_renewal && o.next_renewal !== '0000-00-00' ? new Date(o.next_renewal).toLocaleDateString('en-GB') : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            )}
+            <button
+              onClick={() => setSortDir(d => d==='desc'?'asc':'desc')}
+              style={{fontSize:12,color:'var(--ink-muted)',cursor:'pointer',display:'flex',alignItems:'center',gap:4,padding:'4px 8px',borderRadius:5,border:'1px solid var(--border)',background:'var(--white)'}}
+            >
+              Order ID {sortDir==='desc'?'↓':'↑'}
+            </button>
           </div>
 
-          {/* Expiring soon */}
-          {expiringSoon.length > 0 && (
-            <div className="card" style={{padding:0,overflow:'hidden'}}>
-              <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',background:'#fff7ed'}}>
-                <div style={{fontWeight:600,fontSize:14,color:'#c2410c'}}>⏰ Expiring soon</div>
-                <div style={{fontSize:12,color:'#9a3412',marginTop:2}}>Act before these renew manually</div>
+          {loading ? (
+            <div style={{textAlign:'center',padding:48}}><div className="spinner" style={{margin:'0 auto'}}/></div>
+          ) : filtered.length === 0 ? (
+            <div style={{textAlign:'center',padding:'48px 20px',color:'var(--ink-muted)'}}>
+              <div style={{fontSize:28,marginBottom:8}}>
+                {activeFilter === 'active' ? '🎉' : activeFilter === 'expiring' ? '⏰' : '📋'}
               </div>
-              <div>
-                {expiringSoon.map((o,i) => {
-                  const days = Math.ceil((new Date(o.next_renewal) - now) / 86400000)
-                  const urgent = days <= 7
-                  return (
-                    <div key={o.id} style={{
-                      padding:'12px 20px',
-                      borderBottom: i < expiringSoon.length-1 ? '1px solid var(--border)' : 'none',
-                      display:'flex',alignItems:'center',gap:12
-                    }}>
-                      <div style={{
-                        width:44,height:44,borderRadius:8,flexShrink:0,
-                        background: urgent ? '#fef2f2' : '#fff7ed',
-                        display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'
-                      }}>
-                        <div style={{fontSize:16,fontWeight:800,color: urgent ? '#dc2626' : '#ea580c',lineHeight:1}}>{days}</div>
-                        <div style={{fontSize:9,color: urgent ? '#dc2626' : '#ea580c',fontWeight:600}}>DAYS</div>
-                      </div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontFamily:'monospace',fontSize:12,fontWeight:700,color:'var(--blue-accent)'}}>#{o.gogetssl_order_id}</div>
-                        <div style={{fontSize:12,color:'var(--ink-mid)',marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                          {o.domain || resolveProduct(o)}
-                        </div>
-                        <div style={{fontSize:11,color:'var(--ink-muted)',marginTop:1}}>
-                          {new Date(o.next_renewal).toLocaleDateString('en-GB')}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+              <div style={{fontWeight:500,fontSize:14,color:'var(--ink-mid)',marginBottom:4}}>
+                No {activeFilterMeta?.label.toLowerCase()} orders
+              </div>
+              <div style={{fontSize:13}}>
+                {activeFilter === 'active' ? 'No active certificates in your account yet.' :
+                 activeFilter === 'expiring' ? 'Great — no certificates expiring in the next 30 days.' :
+                 'No orders match this filter.'}
               </div>
             </div>
+          ) : (
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+              <thead>
+                <tr style={{background:'var(--white)'}}>
+                  {['Order ID','Product','Domain','CA','Status','Assigned to','Valid till',''].map(h => (
+                    <th key={h} style={{
+                      textAlign:'left', fontSize:11, fontWeight:600,
+                      color:'var(--ink-muted)', padding:'8px 16px',
+                      borderBottom:'1px solid var(--border)',
+                      letterSpacing:'.04em', textTransform:'uppercase',
+                      whiteSpace:'nowrap'
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((o, i) => {
+                  const days = o.next_renewal && o.next_renewal !== '0000-00-00'
+                    ? Math.ceil((new Date(o.next_renewal) - now) / 86400000) : null
+                  const isExpiring = days !== null && days > 0 && days <= 30
+                  return (
+                    <tr
+                      key={o.id}
+                      style={{
+                        borderBottom: i < filtered.length-1 ? '1px solid var(--border)' : 'none',
+                        cursor:'pointer',
+                        background: isExpiring ? '#fff9f5' : 'var(--white)'
+                      }}
+                      onClick={() => setDrawer(o)}
+                      onMouseEnter={e => e.currentTarget.style.background='var(--blue-sky)'}
+                      onMouseLeave={e => e.currentTarget.style.background = isExpiring ? '#fff9f5' : 'var(--white)'}
+                    >
+                      <td style={{padding:'10px 16px'}}>
+                        <span style={{fontFamily:'monospace',fontWeight:700,color:'var(--blue-accent)',fontSize:13}}>
+                          #{o.gogetssl_order_id||'—'}
+                        </span>
+                      </td>
+                      <td style={{padding:'10px 16px',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        {resolveProduct(o)}
+                      </td>
+                      <td style={{padding:'10px 16px'}}>
+                        <span style={{fontFamily:'monospace',fontSize:12}}>{o.domain||'—'}</span>
+                      </td>
+                      <td style={{padding:'10px 16px',fontSize:12,color:'var(--ink-muted)'}}>{resolveCA(o)}</td>
+                      <td style={{padding:'10px 16px'}}>
+                        <span className={`pill pill-${SP[o.status]||'gray'}`} style={{fontSize:11}}>{o.status}</span>
+                        {isExpiring && <span style={{marginLeft:4,fontSize:10,color:'#ea580c',fontWeight:600}}>{days}d</span>}
+                      </td>
+                      <td style={{padding:'10px 16px',fontSize:12}}>
+                        {o.partner
+                          ? <span style={{color:'var(--ink-mid)'}}>{o.partner.full_name||o.partner.email}</span>
+                          : <span style={{color:'var(--amber)',fontWeight:500}}>Unassigned</span>}
+                      </td>
+                      <td style={{padding:'10px 16px',fontSize:12,color:'var(--ink-muted)',whiteSpace:'nowrap'}}>
+                        {o.next_renewal && o.next_renewal !== '0000-00-00'
+                          ? new Date(o.next_renewal).toLocaleDateString('en-GB') : '—'}
+                      </td>
+                      <td style={{padding:'10px 16px'}}>
+                        <button
+                          onClick={e=>{e.stopPropagation();setDrawer(o)}}
+                          className="btn btn-secondary btn-sm"
+                          style={{fontSize:11,padding:'3px 10px'}}
+                        >Details</button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           )}
         </div>
       </div>
+
+      {drawer && (
+        <OrderDrawer
+          order={drawer}
+          partners={partners}
+          onClose={() => setDrawer(null)}
+          onRefresh={loadData}
+        />
+      )}
     </DashShell>
   )
 }
