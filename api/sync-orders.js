@@ -47,12 +47,27 @@ async function getV1Key() {
 }
 
 async function sbUpsert(row, authHeader) {
+  const headers = { 'apikey': SUPABASE_ANON, 'Authorization': authHeader, 'Content-Type': 'application/json' }
+
+  // First try upsert (insert or update on conflict)
   const r = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
     method: 'POST',
-    headers: { 'apikey': SUPABASE_ANON, 'Authorization': authHeader, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    headers: { ...headers, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(row)
   })
-  return r.ok ? null : (await r.text()).slice(0, 120)
+  if (r.ok) return null
+
+  // If upsert fails (e.g. RLS on insert), try a PATCH on existing row
+  const errText = await r.text()
+  if (row.gogetssl_order_id) {
+    const patch = await fetch(`${SUPABASE_URL}/rest/v1/orders?gogetssl_order_id=eq.${row.gogetssl_order_id}`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ status: row.status, next_renewal: row.next_renewal, api_response: row.api_response, updated_at: row.updated_at })
+    })
+    return patch.ok ? null : (await patch.text()).slice(0, 120)
+  }
+  return errText.slice(0, 120)
 }
 
 export default async function handler(req, res) {
