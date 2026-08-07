@@ -13,7 +13,7 @@ export default function AdminOrders() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState(null)
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState(() => new URLSearchParams(window.location.search).get('filter') || 'all')
   const [search, setSearch] = useState('')
   const [sortDir, setSortDir] = useState('desc')
   const [selected, setSelected] = useState(new Set())
@@ -56,6 +56,12 @@ export default function AdminOrders() {
     if (filter === 'unassigned') list = list.filter(o => !o.assigned_to)
     else if (filter === 'active') list = list.filter(o => ['active','issued'].includes(o.status))
     else if (filter === 'incomplete') list = list.filter(o => o.status === 'incomplete')
+    else if (filter === 'pending') list = list.filter(o => ['pending','processing'].includes(o.status))
+    else if (filter === 'expiring') list = list.filter(o => {
+      if (!o.next_renewal || o.next_renewal === '0000-00-00') return false
+      const d = (new Date(o.next_renewal) - new Date()) / 86400000
+      return d > 0 && d <= 30 && ['active','issued'].includes(o.status)
+    })
     else if (filter === 'cancelled') list = list.filter(o => ['cancelled','revoked','expired'].includes(o.status))
     else if (filter === 'automation') list = list.filter(o => o.is_automation)
     else if (filter === 'standard') list = list.filter(o => !o.is_automation)
