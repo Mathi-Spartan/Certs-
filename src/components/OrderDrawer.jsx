@@ -288,18 +288,28 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
           {/* Incomplete warning — redirect to portal, no new order */}
           {!loading&&ld&&isIncomplete&&!showGen&&!dcvResult&&(
             <div style={{background:'#fffbeb',border:'1px solid #f59e0b',borderRadius:10,padding:'16px 18px',marginBottom:18}}>
-              <div style={{display:'flex',gap:14,alignItems:'flex-start',marginBottom:12}}>
-                <div style={{fontSize:24,flexShrink:0}}>⚠️</div>
+              <div style={{display:'flex',gap:14,alignItems:'flex-start',marginBottom:14}}>
+                <div style={{fontSize:22,flexShrink:0}}>⚠️</div>
                 <div style={{flex:1}}>
-                  <div style={{fontWeight:700,color:'#92400e',marginBottom:6,fontSize:14}}>Certificate not yet generated</div>
-                  <p style={{fontSize:13,color:'#78350f',marginBottom:4}}>
-                    This is an empty order shell — no CSR submitted yet. Click <strong>Generate Certificate</strong> to submit your CSR, choose domain validation, and place the actual certificate.
+                  <div style={{fontWeight:700,color:'#92400e',marginBottom:6,fontSize:14}}>No CSR submitted yet</div>
+                  <p style={{fontSize:13,color:'#78350f',lineHeight:1.5}}>
+                    GoGetSSL's API requires the CSR to be submitted when placing the order. This incomplete order shell was placed without one. To issue a certificate for your domain:
                   </p>
+                  <ol style={{fontSize:13,color:'#78350f',marginTop:8,paddingLeft:20,lineHeight:1.8}}>
+                    <li>Click <strong>Generate Certificate</strong> — this places a new order with your CSR included</li>
+                    <li>Choose your domain validation method (DNS / HTTP / Email)</li>
+                    <li>Complete validation — certificate is issued automatically</li>
+                  </ol>
+                  <p style={{fontSize:11,color:'#b45309',marginTop:8}}>The incomplete order #{order?.gogetssl_order_id} can be cancelled separately.</p>
                 </div>
               </div>
-              <button className="btn btn-primary btn-sm" onClick={()=>{setGenMode('new');setShowGen(true)}} style={{background:'#d97706'}}>
-                ⚙ Generate Certificate
-              </button>
+              <div style={{display:'flex',gap:8}}>
+                <button className="btn btn-primary btn-sm" onClick={()=>{setGenMode('new');setShowGen(true)}} style={{background:'#d97706'}}>
+                  ⚙ Generate Certificate
+                </button>
+                <a href={`https://my.gogetssl.com/en/certificates/${order?.gogetssl_order_id}`} target="_blank" rel="noreferrer"
+                  className="btn btn-secondary btn-sm" style={{fontSize:12}}>Open in GoGetSSL ↗</a>
+              </div>
             </div>
           )}
 
@@ -345,8 +355,8 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
                 color: genMode==='reissue' ? 'var(--blue-accent)' : '#92400e'
               }}>
                 {genMode==='reissue'
-                  ? <><strong>Reissue:</strong> Replaces the CSR on existing order #{order?.gogetssl_order_id}. No new charge. Certificate re-issued within same validity period. Allowed unlimited times while the order is active.</>
-                  : <><strong>New order:</strong> Places a new certificate order with your CSR. This creates a new GoGetSSL order and uses one certificate slot from your account. The original incomplete order #{order?.gogetssl_order_id} is separate.</>
+                  ? <><strong>↺ Reissue:</strong> Replaces the CSR on existing order #{order?.gogetssl_order_id}. No new charge. Certificate is re-issued within the same validity period. Unlimited reissues allowed on active orders.</>
+                  : <><strong>⚙ Generate Certificate:</strong> Submits your CSR and places the certificate order. GoGetSSL will issue the certificate after domain validation completes. This uses one certificate slot.</>
                 }
               </div>
 
