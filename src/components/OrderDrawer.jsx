@@ -95,7 +95,8 @@ function DcvBox({ dcvMethod, approverMethod, domain }) {
   return null
 }
 
-const STEPS = ['CSR', 'Contact', 'Validation', 'Confirm']
+const STEPS_NEW = ['CSR', 'Contact', 'Validation', 'Confirm']
+const STEPS_REISSUE = ['CSR', 'Validation', 'Confirm']
 
 export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
   const [ld, setLd] = useState(null)
@@ -103,6 +104,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
   const [actionMsg, setActionMsg] = useState(null)
   const [cancelConfirm, setCancelConfirm] = useState(false)
   const [showGen, setShowGen] = useState(false)
+  const [genMode, setGenMode] = useState('new') // 'new' or 'reissue'
   const [step, setStep] = useState(1)
   // Step 1: CSR
   const [csr, setCsr] = useState('')
@@ -129,7 +131,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
   async function fetchLive() {
     if (!order) return
     setLoading(true); setLd(null); setActionMsg(null); setCancelConfirm(false)
-    setShowGen(false); setStep(1); setDcvResult(null); setNewOrderId(null)
+    setShowGen(false); setStep(1); setDcvResult(null); setNewOrderId(null); setGenMode('new')
     try {
       const res = await fetch('/api/order-action', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -171,7 +173,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
 
     try {
       const payload = {
-        action: 'generate',
+        action: genMode === 'reissue' ? 'reissue' : 'generate',
         order_id: order.gogetssl_order_id,
         product_id: pid,
         period: validityPeriod,
@@ -213,7 +215,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
       setDcvResult({ dcv_method: responseDcv, approver_method: finalAM, domain: responseDomain })
       if (r.order_id) setNewOrderId(r.order_id)
       setShowGen(false); setStep(1)
-      setActionMsg({ type:'success', text:`✓ Certificate order placed! New order #${r.order_id} is now active. Follow the ${responseDcv.toUpperCase()} validation instructions below.` })
+      setActionMsg({ type:'success', text: genMode==='reissue' ? `✓ Reissue submitted for order #${order.gogetssl_order_id}. Follow the ${responseDcv.toUpperCase()} validation instructions below.` : `✓ New certificate order #${r.order_id} placed and active. Follow the ${responseDcv.toUpperCase()} validation instructions below.` })
       onRefresh?.()
     } catch(e) { setActionMsg({ type:'error', text: e.message }) }
     setGenerating(false)
@@ -250,7 +252,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
   const stdEmails = ['admin','administrator','postmaster','hostmaster','webmaster'].map(p=>`${p}@${(domain||'').replace(/^\*\./,'')}`)
 
   const canNext1 = csr.includes('BEGIN CERTIFICATE') && csrInfo && !csrInfo?.error
-  const canNext2 = contact.first_name && contact.last_name && contact.email && contact.phone && contact.city && contact.country
+  const canNext2 = genMode==='reissue' || (contact.first_name && contact.last_name && contact.email && contact.phone && contact.city && contact.country)
   const canNext3 = dcvMethod !== 'email' || approverEmail
 
   return (
@@ -295,7 +297,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
                   </p>
                 </div>
               </div>
-              <button className="btn btn-primary btn-sm" onClick={()=>setShowGen(true)} style={{background:'#d97706'}}>
+              <button className="btn btn-primary btn-sm" onClick={()=>{setGenMode('new');setShowGen(true)}} style={{background:'#d97706'}}>
                 ⚙ Generate Certificate
               </button>
             </div>
@@ -331,13 +333,26 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
           {showGen&&(
             <div style={{border:'2px solid var(--blue-accent)',borderRadius:12,padding:20,marginBottom:18}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-                <h3 style={{fontSize:15}}>isIncomplete ? 'Generate Certificate (new order)' : 'Reissue Certificate'</h3>
+                <h3 style={{fontSize:15}}>{genMode==='reissue' ? '↺ Reissue Certificate' : genMode==='reissue' ? '↺ Submit Reissue' : '⚙ Place Certificate Order'}</h3>
                 <button onClick={()=>{setShowGen(false);setStep(1);setCsrInfo(null)}} style={{opacity:.5,fontSize:18}}>×</button>
+              </div>
+
+              {/* Mode context banner */}
+              <div style={{
+                background: genMode==='reissue' ? 'var(--blue-sky)' : '#fffbeb',
+                border: `1px solid ${genMode==='reissue' ? 'rgba(51,117,177,.2)' : '#f59e0b'}`,
+                borderRadius:8, padding:'10px 14px', marginBottom:16, fontSize:12,
+                color: genMode==='reissue' ? 'var(--blue-accent)' : '#92400e'
+              }}>
+                {genMode==='reissue'
+                  ? <><strong>Reissue:</strong> Replaces the CSR on existing order #{order?.gogetssl_order_id}. No new charge. Certificate re-issued within same validity period. Allowed unlimited times while the order is active.</>
+                  : <><strong>New order:</strong> Places a new certificate order with your CSR. This creates a new GoGetSSL order and uses one certificate slot from your account. The original incomplete order #{order?.gogetssl_order_id} is separate.</>
+                }
               </div>
 
               {/* Step tabs */}
               <div style={{display:'flex',borderBottom:'1px solid var(--border)',marginBottom:20,overflowX:'auto'}}>
-                {STEPS.map((s,i)=>(
+                {(genMode==='reissue' ? STEPS_REISSUE : STEPS_NEW).map((s,i)=>(
                   <div key={s} style={{padding:'6px 16px',fontSize:12,fontWeight:500,whiteSpace:'nowrap',color:step===i+1?'var(--blue-accent)':'var(--ink-muted)',borderBottom:step===i+1?'2px solid var(--blue-accent)':'2px solid transparent',cursor:step>i+1?'pointer':'default'}}
                     onClick={()=>step>i+1&&setStep(i+1)}>
                     {i+1}. {s}
@@ -373,13 +388,13 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
                     <button className="btn btn-secondary btn-sm" style={{marginTop:8}} onClick={()=>decodeCsr(csr)}>Decode CSR</button>
                   )}
                   <div style={{marginTop:14,display:'flex',justifyContent:'flex-end'}}>
-                    <button className="btn btn-primary btn-sm" disabled={!canNext1} onClick={()=>setStep(2)}>Next: Contact Details →</button>
+                    <button className="btn btn-primary btn-sm" disabled={!canNext1} onClick={()=>genMode==='reissue'?setStep(3):setStep(2)}>Next: {genMode==='reissue'?'Validation →':'Contact Details →'}</button>
                   </div>
                 </div>
               )}
 
               {/* STEP 2: Contact */}
-              {step===2&&(
+              {step===2&&genMode==='new'&&(
                 <div>
                   <div style={{fontSize:13,color:'var(--ink-muted)',marginBottom:14}}>These details are sent to the Certificate Authority for administrative contact. Required for certificate issuance.</div>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
@@ -438,7 +453,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
                     </div>
                   )}
                   <div style={{marginTop:14,display:'flex',gap:8,justifyContent:'flex-end'}}>
-                    <button className="btn btn-secondary btn-sm" onClick={()=>setStep(2)}>← Back</button>
+                    <button className="btn btn-secondary btn-sm" onClick={()=>genMode==='reissue'?setStep(1):setStep(2)}>← Back</button>
                     <button className="btn btn-primary btn-sm" disabled={!canNext3} onClick={()=>setStep(4)}>Next: Confirm →</button>
                   </div>
                 </div>
@@ -453,9 +468,9 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
                       <span style={{color:'var(--ink-muted)'}}>Order</span><span className="mono">#{order?.gogetssl_order_id}</span>
                       <span style={{color:'var(--ink-muted)'}}>Domain (CN)</span><span className="mono">{csrInfo?.cn||'from CSR'}</span>
                       <span style={{color:'var(--ink-muted)'}}>Key</span><span>{csrInfo?.key_size||'?'}-bit RSA</span>
-                      <span style={{color:'var(--ink-muted)'}}>Admin contact</span><span>{contact.first_name} {contact.last_name} &lt;{contact.email}&gt;</span>
-                      <span style={{color:'var(--ink-muted)'}}>Phone</span><span>{contact.phone}</span>
-                      <span style={{color:'var(--ink-muted)'}}>City / Country</span><span>{contact.city}, {contact.country}</span>
+                      {genMode==='new'&&<><span style={{color:'var(--ink-muted)'}}>Admin contact</span><span>{contact.first_name} {contact.last_name} &lt;{contact.email}&gt;</span></>}
+                      {genMode==='new'&&<><span style={{color:'var(--ink-muted)'}}>Phone</span><span>{contact.phone}</span></>}
+                      {genMode==='new'&&<><span style={{color:'var(--ink-muted)'}}>City / Country</span><span>{contact.city}, {contact.country}</span></>}
                       <span style={{color:'var(--ink-muted)'}}>DCV method</span><span style={{fontWeight:600,textTransform:'uppercase'}}>{dcvMethod}</span>
                       {dcvMethod==='email'&&<><span style={{color:'var(--ink-muted)'}}>Approver email</span><span className="mono">{approverEmail}</span></>}
                     </div>
@@ -469,7 +484,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
                   <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
                     <button className="btn btn-secondary btn-sm" onClick={()=>setStep(3)}>← Back</button>
                     <button className="btn btn-primary btn-sm" onClick={doGenerate} disabled={generating} style={{minWidth:180,justifyContent:'center'}}>
-                      {generating?<><span className="spinner" style={{width:14,height:14,borderWidth:2}}/>Submitting…</>:'⚙ Generate Certificate'}
+                      {generating?<><span className="spinner" style={{width:14,height:14,borderWidth:2}}/>Submitting…</>:genMode==='reissue' ? '↺ Submit Reissue' : '⚙ Place Certificate Order'}
                     </button>
                   </div>
                 </div>
@@ -630,13 +645,13 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
               <div style={{borderTop:'1px solid var(--border)',paddingTop:14,marginBottom:16}}>
                 <div style={{fontSize:11,fontWeight:600,color:'var(--ink-muted)',letterSpacing:'.07em',marginBottom:10}}>ACTIONS</div>
                 <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                  {isIncomplete&&!showGen&&!dcvResult&&<button className="btn btn-primary btn-sm" onClick={()=>setShowGen(true)} style={{background:'#d97706'}}>⚙ Generate Certificate</button>}
+                  {isIncomplete&&!showGen&&!dcvResult&&<button className="btn btn-primary btn-sm" onClick={()=>{setGenMode('new');setShowGen(true)}} style={{background:'#d97706'}}>⚙ Generate Certificate</button>}
                   {hasCert&&<>
                     <button className="btn btn-secondary btn-sm" onClick={()=>download(ld.crt_code,`cert_${ld.order_id}.crt`)}>↓ Certificate</button>
                     {hasCa&&<button className="btn btn-secondary btn-sm" onClick={()=>download(ld.ca_code,`ca_${ld.order_id}.crt`)}>↓ CA Bundle</button>}
                   </>}
                   {isPending&&<button className="btn btn-secondary btn-sm" onClick={()=>doAction('resend_email')}>✉ Resend Validation Email</button>}
-                  {canReissue&&!isIncomplete&&<button className="btn btn-secondary btn-sm" onClick={()=>setShowGen(true)}>↺ Reissue Certificate</button>}
+                  {canReissue&&!isIncomplete&&<button className="btn btn-secondary btn-sm" onClick={()=>{setGenMode('reissue');setShowGen(true)}}>↺ Reissue Certificate</button>}
                   {canCancel&&!cancelConfirm&&<button className="btn btn-danger btn-sm" onClick={()=>setCancelConfirm(true)}>Cancel Order</button>}
                   <a href={`https://my.gogetssl.com/en/certificates/${order?.gogetssl_order_id}`} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">GoGetSSL portal ↗</a>
                 </div>
