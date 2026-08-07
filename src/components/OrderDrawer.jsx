@@ -288,18 +288,18 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
           {/* Incomplete — submit CSR via GoGetSSL portal */}
           {!loading&&ld&&isIncomplete&&!dcvResult&&(
             <div style={{background:'#fffbeb',border:'1px solid #f59e0b',borderRadius:10,padding:'18px 20px',marginBottom:18}}>
-              <div style={{fontWeight:700,color:'#92400e',marginBottom:8,fontSize:14}}>⚙ Submit CSR to generate this certificate</div>
+              <div style={{fontWeight:700,color:'#92400e',marginBottom:8,fontSize:14}}>⚙ Certificate not yet generated — CSR required</div>
               <p style={{fontSize:13,color:'#78350f',marginBottom:14,lineHeight:1.6}}>
-                This order is waiting for CSR submission. Complete it in the GoGetSSL portal — the partner API does not support CSR submission on existing orders.
+                This order is awaiting CSR submission and domain validation. CSR submission for incomplete orders must be done through the GoGetSSL partner portal — it is not available via the partner API.
               </p>
               <div style={{background:'rgba(255,255,255,.7)',borderRadius:8,padding:'12px 16px',marginBottom:14}}>
-                <div style={{fontSize:11,fontWeight:700,color:'#92400e',marginBottom:8,letterSpacing:'.05em'}}>HOW TO GENERATE THIS CERTIFICATE</div>
+                <div style={{fontSize:11,fontWeight:700,color:'#92400e',marginBottom:8,letterSpacing:'.05em'}}>STEPS</div>
                 <ol style={{fontSize:13,color:'#78350f',paddingLeft:18,lineHeight:2,margin:0}}>
                   <li>Click <strong>"Open in GoGetSSL portal ↗"</strong> below</li>
                   <li>Click <strong>"Generate Certificate"</strong> on the order page</li>
-                  <li>Paste your CSR, enter contact details, choose validation method</li>
-                  <li>Submit — order moves to <em>processing</em> with DCV instructions</li>
-                  <li>Return here → click <strong>Sync</strong> to see updated status and DCV values</li>
+                  <li>Paste your CSR, enter contact details, choose DNS / HTTP / Email validation</li>
+                  <li>Submit — order status changes to <em>processing</em></li>
+                  <li>Come back here → click <strong>"Sync from GoGetSSL"</strong> on the orders page to see DCV instructions</li>
                 </ol>
               </div>
               <a href={`https://my.gogetssl.com/en/certificates/${order?.gogetssl_order_id}`} target="_blank" rel="noreferrer"
@@ -308,6 +308,7 @@ export default function OrderDrawer({ order, partners, onClose, onRefresh }) {
               </a>
             </div>
           )}
+
 
           {/* New order created banner */}
           {!loading&&newOrderId&&(
